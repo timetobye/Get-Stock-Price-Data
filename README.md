@@ -171,8 +171,23 @@ stock_exchange_name_list = ['nas', 'nys', 'ams'] # 순서 대로 나스닥, 뉴�
 
 ![image](img/stock_ticker_with_exchange_img_20230802.png)
 
-### [2023-08-XX] 해외주식 종목 정보
-해외주식 종목 정보를 가져옵니다.
+### [2023-08-15] 해외주식 종목 정보
+이 코드는 해외주식 주가 정보를 가져옵니다.
+- **stock_daily_price_us_market.py**
+- 다우30, 나스닥 100, S&P500에 속한 종목을 비롯해, 모든 기업의 주가 정보를 가져오는 코드 입니다.
+- 한국 주가 조회와는 다르게 `거래소`, `티커`, `조회 날짜` 를 입력해야 합니다.
+- parameter
+  - default : daily, 하루치 데이터만 가져오게 설정한 상태
+  - 만일 최대 100 영업일 데이터가 필요하다면 `period` 부분을 `multiple` 로 변경
+  - 한국투자증권 개발팀에 따르면 `multiple` 의 경우 기간 조절이 불가능합니다. 무조건 최대 100개 이하로 떨어지는 구조
+- 각 데이터 필드에 대한 정보는 API 문서를 참고해주세요.
+- 참고 문서 : [API 문서 - 해외주식 기간별시세[v1_해외주식-010]](https://apiportal.koreainvestment.com/apiservice/apiservice-domestic-stock-current#L_0e9fb2ba-bbac-4735-925a-a35e08c9a790)
+
+```bash
+-- Sample
+ xymd      clos sign    diff   rate      open      high       low      tvol        tamt      pbid  vbid      pask vask stock_ticker
+0 2023-08-14  179.4600    2  1.6700  +0.94  177.9700  179.6900  177.3050  43675627  7822228931  179.9000  2100  179.9400  200         AAPL
+```
 
 ### [2023-08-XX] Airflow Dag Sample Code
 Airflow 를 이용해 주기적으로 데이터를 가져옵니다.
