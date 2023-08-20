@@ -189,5 +189,47 @@ stock_exchange_name_list = ['nas', 'nys', 'ams'] # 순서 대로 나스닥, 뉴�
 0 2023-08-14  179.4600    2  1.6700  +0.94  177.9700  179.6900  177.3050  43675627  7822228931  179.9000  2100  179.9400  200         AAPL
 ```
 
-### [2023-08-XX] Airflow Dag Sample Code
+### [2023-08-20] Airflow Dag Sample Code
 Airflow 를 이용해 주기적으로 데이터를 가져옵니다.
+
+설치 및 환경 설정
+- Airflow 는 Docker compose 를 이용하여 설치 하였습니다. 
+- Volume mount 를 하는 것이 이로움. 추가로 data 를 별도 관리하는 디렉터리도 생성하였음
+- Airflow 공식 문서 : https://airflow.apache.org/docs/apache-airflow/stable/howto/docker-compose/index.html
+
+#### airflow_config_generate.py
+이 코드는 매일 일정 주기로 토큰을 발행하는 샘플 코드 입니다.
+- 한국투자증권에서 제공하는 토큰은 1일 이내의 만료 기간이 있으므로, 재갱신을 해야 합니다.
+- 주말은 건너 뜁니다.
+- 마켓이 영업일이면 발급을 하고, 영업일이 아닐 경우 건너 뜁니다.
+- 영업일인지 여부를 먼저 확인할 수 있으면 좋겠으나, 한투에서 관련 API는 토큰 발급 후 확인할 수 있도록 만들어둔 상태라 현재는 토큰 갱신 프로세스로 처리
+- 토큰 발급은 KST 기준 오전 2시 입니다. Airflow 는 별도 설정을 하지 않는 이상 UTC 기준으로 실행되므로 참고하시기 바랍니다.
+- 토큰이 정상 발급 될 경우 카카오톡 계정으로 발급 메시지가 전송됨
+
+![image](img/airflow_generate_token_and_key_sample_dag_image_20230820.png)
+
+#### airflow_stock_daily_price_ks_market.py
+이 코드는 월-금에 한국 주식 시장의 정보를 가져오는 샘플 코드 입니다.
+- `airflow_config_generate.py` 에 의존성을 가지고 있습니다.
+- 모든 종목을 다 가져오기 위해 파일을 읽는 부분은 코드 상에 작성하지 않았습니다.
+- 샘플 코드에서는 `삼성전자`, `에코프로`, `JYP Ent`(트와이스 짱...) 데이터를 받을 수 있습니다.
+- 테스트 중인 부분이 있어서 코드 상에 오류가 있을 수 있습니다.
+- KST 기준으로 오후 6시에 처리 됩니다.
+
+![image](img/airflow_stock_market_daily_price_ks_market_sample_dag_image_20230820.png)
+
+코드 상의 문제점
+- 종목의 개수가 많아졌을 때 `download_stock_data_csv` task 에서 오류가 발생할 경우에 대한 처리가 미흡함
+- 종목 별로 task 를 만들기에는 종목의 개수가 많아질 경우 적절하지 않을 것으로 생각함
+
+#### 기타
+- Airflow 의 `TaskGroup` 과 `SubDagOperator` 를 이용하면 Dag 끼리도 묶을 수 있으나 이 리포에는 작성하지 않았습니다.
+- Airflow schedule 에 따라 DAG 의 실행을 제어할 수도 있으나, Airflow sensor 기능에 대한 고민도 필요함 
+- 대체로 아래와 같이 구성을 하면 되는데, sensor 가 있으면 시간에 구애받지 않을 수 있을 것으로 생각
+
+![image](img/stock_market_timetable_with_airflow_20230820.png)
+
+#### TODO
+1. Airflow 를 이용하여 미국주식 모든 종목 정보/주가 가져오기
+2. Airflow 를 이용하여 처리 결과 이메일 전송 또는 슬랙 등 노티 기능
+3. Qunat 용 처리 코드 외 여러가지
