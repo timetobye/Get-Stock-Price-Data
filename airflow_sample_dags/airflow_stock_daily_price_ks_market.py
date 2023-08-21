@@ -6,6 +6,7 @@ import pytz
 from airflow import DAG
 from airflow.operators.python import PythonOperator, BranchPythonOperator
 from airflow.operators.empty import EmptyOperator
+from airflow.providers.slack.operators.slack import SlackAPIPostOperator
 
 from airflow_config_generate import GetMarketOpenStatus
 from datetime import datetime, timedelta
@@ -118,6 +119,20 @@ with DAG(
             print(f"Done {stock_code} data - Date : {target_date}")
             print("--------------------------------------------------")
 
+    def send_slack_message(**kwargs):
+        dag_id = kwargs['dag'].dag_id
+        execution_date = kwargs['execution_date']
+
+        slack_message = f"DAG execution completed! " \
+                        f"DAG ID : {dag_id} " \
+                        f"Execution Date: {execution_date}"
+
+        task_instance = kwargs['ti']
+        task_instance.xcom_push(
+            key="slack_message",
+            value=slack_message
+        )
+
     get_market_open_status = PythonOperator(
         task_id="get_market_open_status",
         python_callable=get_market_open_status,
@@ -145,6 +160,19 @@ with DAG(
     market_closed_task = EmptyOperator(task_id="market_closed_task")
     market_open_task = EmptyOperator(task_id="market_open_task")
 
+    send_slack_message_task = PythonOperator(
+        task_id="send_slack_message",
+        python_callable=send_slack_message,
+        provide_context=True
+    )
+
+    slack_notification_task = SlackAPIPostOperator(
+        task_id="slack_notification_task",
+        token="your_token",
+        channel="#your_channel",
+        text="{{ ti.xcom_pull(task_ids='send_slack_message', key='slack_message') }}",  # jinja template 활용
+    )
+
     done_task = EmptyOperator(task_id="done_task", trigger_rule="none_failed")
 
     get_market_open_status >> check_open_status
@@ -152,6 +180,6 @@ with DAG(
     check_open_status >> market_open_task
     market_open_task >> read_and_pass_stock_code_task >> download_stock_data_csv_task
     download_stock_data_csv_task >> done_task
-
+    done_task >> send_slack_message_task >> slack_notification_task
 
 
