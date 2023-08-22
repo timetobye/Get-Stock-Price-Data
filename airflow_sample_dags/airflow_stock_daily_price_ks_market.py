@@ -77,16 +77,25 @@ class GetDailyStockData(GetMarketOpenStatus):
 
 get_daily_stock_data = GetDailyStockData()
 
+
+def convert_utc_to_kst(utc_time):
+    kst_timezone = pytz.timezone('Asia/Seoul')
+    kst_time = utc_time.replace(tzinfo=pytz.utc).astimezone(kst_timezone)
+
+    return kst_time
+
 with DAG(
     dag_id="stock_daily_price_ks_market",
-    start_date= datetime(2023, 8, 13, 9),
-    schedule_interval='0 9 * * 1-6',  # UTC 기준, interval 에 대한 이해 필요
+        start_date=datetime(2023, 8, 10, 9),
+        schedule_interval='0 9 * * 1-5',  # UTC 기준
     catchup=True
 ) as dag:
     def get_market_open_status(**kwargs):
         check_market_open_status = GetMarketOpenStatus()
-        target_date = kwargs["execution_date"].strftime('%Y%m%d')
-        print(f'kwargs["execution_date"].strftime("%Y%m%d") : {kwargs["execution_date"].strftime("%Y%m%d")}')
+
+        data_interval_end = kwargs["data_interval_end"]
+        kst_data_interval_end = convert_utc_to_kst(data_interval_end)
+        target_date = kst_data_interval_end.strftime("%Y%m%d")
 
         open_yn_result = check_market_open_status.get_market_status(target_date)
         kwargs["ti"].xcom_push(key="open_yn_result", value=open_yn_result)
@@ -108,7 +117,10 @@ with DAG(
         stock_code_dict = kwargs["ti"].xcom_pull(
             key="stock_code_data", task_ids='read_and_pass_stock_code'
         )
-        target_date = kwargs["execution_date"].strftime('%Y%m%d')
+        data_interval_end = kwargs["data_interval_end"]
+        kst_data_interval_end = convert_utc_to_kst(data_interval_end)
+        target_date = kst_data_interval_end.strftime("%Y%m%d")
+
         print(f"stock_code_dict from xcom_pull : {stock_code_dict}")
         for stock_code in stock_code_dict.values():
             print(f"Download {stock_code} data - Date : {target_date}")
@@ -121,11 +133,14 @@ with DAG(
 
     def send_slack_message(**kwargs):
         dag_id = kwargs['dag'].dag_id
-        execution_date = kwargs['execution_date']
+        data_interval_end = kwargs["data_interval_end"]
+        kst_data_interval_end = convert_utc_to_kst(data_interval_end)
+        target_date = kst_data_interval_end.strftime("%Y%m%d")
 
         slack_message = f"DAG execution completed! " \
                         f"DAG ID : {dag_id} " \
-                        f"Execution Date: {execution_date}"
+                        f"kst data interval end : {kst_data_interval_end} " \
+                        f"target_date : {target_date}"
 
         task_instance = kwargs['ti']
         task_instance.xcom_push(

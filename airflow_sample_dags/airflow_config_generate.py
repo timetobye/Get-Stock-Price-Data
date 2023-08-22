@@ -159,10 +159,22 @@ config_control = ConfigurationControl()
 check_market_open_status = GetMarketOpenStatus()
 
 
+def convert_utc_to_kst(utc_time):
+    kst_timezone = pytz.timezone('Asia/Seoul')
+    kst_time = utc_time.replace(tzinfo=pytz.utc).astimezone(kst_timezone)
+
+    return kst_time
+
+
 def check_weekday(**kwargs):
-    execution_date = kwargs["execution_date"]
-    weekday = execution_date.strftime("%A")
-    if weekday in ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']:
+    data_interval_end = kwargs["data_interval_end"]
+    kst_data_interval_end = convert_utc_to_kst(data_interval_end)
+
+    weekday = kst_data_interval_end.strftime("%A")
+    target_weekday_list = [
+        'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'
+    ]
+    if weekday in target_weekday_list:
         return 'generate_token'
     else:
         return 'market_closed_task'
@@ -204,9 +216,9 @@ def update_hash_key_task(config_control, **kwargs):
 
 
 def get_market_open_status(config_control, **kwargs):
-    target_date = kwargs["execution_date"].strftime('%Y%m%d')
-    print(f'kwargs["execution_date"].strftime("%Y%m%d") '
-          f': {kwargs["execution_date"].strftime("%Y%m%d")}')
+    data_interval_end = kwargs["data_interval_end"]
+    kst_data_interval_end = convert_utc_to_kst(data_interval_end)
+    target_date = kst_data_interval_end.strftime("%Y%m%d")
     open_yn_result = check_market_open_status.get_market_status(target_date)
     kwargs["ti"].xcom_push(key="open_yn_result", value=open_yn_result)
 
