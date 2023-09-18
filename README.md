@@ -229,7 +229,18 @@ Airflow 를 이용해 주기적으로 데이터를 가져옵니다.
 
 ![image](img/stock_market_timetable_with_airflow_20230820.png)
 
+### [2023-09-18] index_component - index_component_from_wikipedia.py
+한국투자증권에서 제공하는 API 에서 각 종목이 지수에 포함되어 있는지 여부를 정확하게 제공하고 있지 않습니다.
+
+그래서 wikipedia 를 이용하여 S&P500, NASDAQ100, DOW30 종목 정보를 가져오고 일목요연하게 볼 수 있도록 테이블 구성
+
+![image](img/index_component_from_wikipedia.png)
+
+향후 파이프라인 구성시 사용할 코드입니다.
+
 #### TODO
-1. Airflow 를 이용하여 미국주식 모든 종목 정보/주가 가져오기
-2. Airflow 를 이용하여 처리 결과 이메일 전송 또는 슬랙 등 노티 기능
-3. Qunat 용 처리 코드 외 여러가지
+1. Airflow 를 이용하여 미국주식 모든 종목 정보/주가 가져오기 - 코드 수정 중
+2. Airflow 를 이용하여 처리 결과 이메일 전송 또는 슬랙 등 노티 기능 - 코드 수정 중
+3. Qunat 용 처리 코드 외 여러가지 - 자료 확인 중
+4. 전반적인 코드 수정 예정 - backfill 등
+5. README 수정 예정
