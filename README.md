@@ -244,3 +244,19 @@ Airflow 를 이용해 주기적으로 데이터를 가져옵니다.
 3. Qunat 용 처리 코드 외 여러가지 - 자료 확인 중
 4. 전반적인 코드 수정 예정 - backfill 등
 5. README 수정 예정
+
+
+# Don't forget
+
+![image](img/we_don't_know_inflation.png)
+
+key
+- 10y-2y : 2y - stable or show modest increases, 10y - sharp rise
+- now : 10y - 2y < 0, future : 10y - 2y >=0, 
+- multiple : Go up? or Go Down? Is BigTech's and S&P500 multiple reasonable?
+- Earnings : Go up? or Go Down? AI -> time -> Earnings up?
+- expected return : S&P500 vs 10y -> 1/PE vs 10y
+- Risk, Risk, Risk - Manage my risk
+- High dividend stocks like banks, Oil, or....? commodity ETF?
+- Books : Big Debt Crises - Ray Dalio
+- Which companies are making money?
