@@ -19,7 +19,7 @@ class GetDailyStockData(GetMarketOpenStatus):
 
     def check_stock_data_directory(self):
         target_directory_name = "airflow/data"  # airflow docker volume mount
-        parent_directory_path = os.path.abspath(os.path.join(os.getcwd(), ".."))
+        parent_directory_path = os.path.abspath(os.path.join(os.getcwd(), "../.."))
         self.target_directory_path = os.path.join(parent_directory_path, target_directory_name)
         os.makedirs(self.target_directory_path, exist_ok=True)
 

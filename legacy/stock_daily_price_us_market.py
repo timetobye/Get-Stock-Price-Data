@@ -89,6 +89,7 @@ def convert_multiple_data(data_result):
 
 def convert_json_to_csv(json_data, target_date, period="daily"):
     # TODO: Airflow 만들 때, 한글명도 가져 오는 것 코드 작성하기. 현재 코드에서는 불필요.
+    print(f"json_data : {json_data}")
     stock_rsym = json_data['output1']['rsym']
     stock_ticker = stock_rsym[4:]  # "D+시장구분(3자리)+종목코드 : DNASAAPL : D+NAS(나스닥)+AAPL(애플)"
     stock_exchange_code = stock_rsym[1:4]
