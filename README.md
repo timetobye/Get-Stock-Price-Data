@@ -181,6 +181,7 @@ docker run -d my-custom-airflow:2.7.1
 ### 5. TODO
 
 공통
+- [ ] S3 Partition 구조 변경 - 코드 변경
 - [ ] config 와 market open status 분리
 - [ ] Airflow Subdags 기능을 이용하여 kr, us market dag 묶기
 - [ ] Slack notification 개선
@@ -203,3 +204,14 @@ US
 
 기타
 - [ ] Grafana, Metabase BI 작업
+- [ ] legacy 코드 재활용
+
+### 6. Sample Image
+
+Sample Image - Metabase BI
+
+| Sample Image 1                                                    | Sample Image 2                                                    |
+|-------------------------------------------------------------------|-------------------------------------------------------------------|
+| ![Alt text](img/Metabase%20Sample%20Image/1.png "optional title") | ![Alt text](img/Metabase%20Sample%20Image/2.png "optional title") |
+| ![Alt text](img/Metabase%20Sample%20Image/3.png "optional title") | ![Alt text](img/Metabase%20Sample%20Image/4.png "optional title") |
+
