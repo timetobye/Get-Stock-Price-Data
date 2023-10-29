@@ -214,4 +214,5 @@ Sample Image - Metabase BI
 |-------------------------------------------------------------------|-------------------------------------------------------------------|
 | ![Alt text](img/Metabase%20Sample%20Image/1.png "optional title") | ![Alt text](img/Metabase%20Sample%20Image/2.png "optional title") |
 | ![Alt text](img/Metabase%20Sample%20Image/3.png "optional title") | ![Alt text](img/Metabase%20Sample%20Image/4.png "optional title") |
+| ![Alt text](img/Metabase%20Sample%20Image/5_Market_Index.png "optional title")   | ![Alt text](img/Metabase%20Sample%20Image/6_us_market_AAPL_History.png "optional title") |
 
