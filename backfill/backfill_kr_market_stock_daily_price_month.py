@@ -134,7 +134,6 @@ def convert_json_to_csv(stock_json, stock_info, group_code, target_date):
     net_income = stock_info[0][fs_list[2]]
     roe = stock_info[0][fs_list[3]]
 
-
     output_one = stock_json['output1']  # output1 전체
     output_two = stock_json['output2']  # output2 전체
 
@@ -182,7 +181,7 @@ def concat_and_save_stock_dataframe(target_directory_path, stock_info_dict, targ
             dfs.append(result_df)
 
         except Exception as e:
-            print(f"error : {e}")
+            print(f"error : {e}, stock_code : {stock_code}, target_date : {target_date}")
             error_count += 1
 
         # print("--------------------------------------------------")
@@ -252,9 +251,9 @@ def get_data_directory_path():
 # '-l','--list', nargs='+'
 if __name__ == "__main__":
     """
-    # 일정 기간으로 지정해서 다운로드 하는 경우
+    # 지정된 종목을 일정 기간으로 지정해서 다운로드 하는 경우
     python3 backfill_kr_market_stock_daily_price_month.py --start_year_and_month 202309 --end_year_and_month 202309
-     
+
     """
     arg_parser = argparse.ArgumentParser()
     arg_parser.add_argument(
@@ -291,7 +290,7 @@ if __name__ == "__main__":
         target_date_list = get_target_date_in_months(year_month)
         print(target_date_list)
 
-        delay_seconds = random.randint(5,6)
+        delay_seconds = random.randint(5, 6)
 
         print(f"Waiting for {delay_seconds} seconds...")
         time.sleep(delay_seconds)  # 선택된 초만큼 대기

@@ -35,7 +35,7 @@ class UploadCsvToS3:
         self.csv_directory_name = "airflow/data"
         self.csv_file_directory_path = self.get_csv_file_directory_path()
         self.csv_file_path_list = glob.glob(f"{self.csv_file_directory_path}{os.sep}*.csv")
-        self.kr_bucket_name = 'your bucket name'  # kr market S3 bucket
+        self.kr_bucket_name = 'your bucket name'
 
     def get_config_file_path(self):
         configuration_directory = os.path.abspath(os.path.join(os.getcwd(), ".."))
@@ -113,10 +113,7 @@ class UploadCsvToS3:
                 print(f"object_name : {object_name}")
 
                 # AWS Glue + Automatic partition
-                object_path = f"year={year}{os.sep}" \
-                              f"month={month}{os.sep}" \
-                              f"day={day}{os.sep}"
-
+                object_path = f"{date_str_format}{os.sep}"
                 s3_client.upload_file(target_date_file_path, bucket_name, f"{object_path}{object_name}")
                 print(f"Complete upload : {object_path}{object_name}")
 
@@ -159,7 +156,7 @@ csv_to_s3 = UploadCsvToS3()
 
 with DAG(
     dag_id="kr_market_upload_stock_data_to_s3",
-    start_date=datetime(2023, 9, 25, 9),
+    start_date=datetime(2023, 10, 12, 9),
     schedule_interval='0 9 * * 1-5',  # 한국 기준 월 - 토
     catchup=False,
     tags=["CSV", "S3", "UPLOAD"]

@@ -305,10 +305,10 @@ class UploadKoreaMarketCodeFileToS3:
             date_string = file_name.split(".")[0].split("_")[-1]  # date parsing
 
             print(f"date_string : {date_string} **********")
-            year, month, day = date_string[0:4], date_string[4:6], date_string[6:]
-            print(f"**** year : month, day = {year} : {month} : {day} *********")
+            # year, month, day = date_string[0:4], date_string[4:6], date_string[6:]
+            # print(f"**** year : month, day = {year} : {month} : {day} *********")
 
-            s3_path = f"{year}{os.sep}{month}{os.sep}{day}{os.sep}"
+            s3_path = f"{date_string}{os.sep}"
             s3_client.upload_file(file_path, self.bucket_name, f"{s3_path}{file_name}")
             print(f"Complete upload : {s3_path}{file_name}")
 
@@ -362,7 +362,7 @@ def convert_utc_to_kst(utc_time):
 # TODO : 여기 부분 dag_id 이름 바꾸기 - 전체적으로 수정 해야 함
 with DAG(
     dag_id="kr_market_stock_code_download_csv_and_upload_to_s3",
-    start_date=datetime(2023, 9, 25, 9),
+    start_date=datetime(2023, 10, 20, 9),
     schedule_interval='30 8 * * 1-5',  # 한국 기준 월 - 금
     catchup=False,
     tags=["CSV", "S3", "UPLOAD"]

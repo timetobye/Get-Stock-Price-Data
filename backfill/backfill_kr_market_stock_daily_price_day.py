@@ -182,7 +182,7 @@ def concat_and_save_stock_dataframe(target_directory_path, stock_info_dict, targ
             dfs.append(result_df)
 
         except Exception as e:
-            print(f"error : {e}")
+            print(f"error : {e}, stock_code : {stock_code}, target_date : {target_date}")
             error_count += 1
 
             if stock_code not in error_stock_code_data:
@@ -231,7 +231,7 @@ def get_data_directory_path():
 # '-l','--list', nargs='+'
 if __name__ == "__main__":
     """
-    # 일정 기간으로 지정해서 다운로드 하는 경우 - 일 단위로 받음
+    # 지정된 종목을 일정 기간으로 지정해서 다운로드 하는 경우 - 일 단위로 받음
     python3 backfill_kr_market_stock_daily_price_day.py --start_date_str 20230901 --end_date_str 20230902
     """
     arg_parser = argparse.ArgumentParser()

@@ -4,13 +4,15 @@ import requests
 import pytz
 import glob
 import time
+import sys
+sys.path.append('/opt/airflow/')
 
 from airflow import DAG
 from airflow.operators.python import PythonOperator, BranchPythonOperator
 from airflow.operators.empty import EmptyOperator
 from airflow.providers.slack.operators.slack import SlackAPIPostOperator
 
-from config_generate import GetKoreaMarketOpenStatus
+from utils.market_open_status import GetKoreaMarketOpenStatus
 from datetime import datetime, timedelta
 
 # TODO : 전체적인 코드 리팩토링 필요 - 간결, 중복 제거
