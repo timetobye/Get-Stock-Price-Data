@@ -1,7 +1,6 @@
 import os
 import pandas as pd
 import requests
-import pytz
 import glob
 import time
 import sys

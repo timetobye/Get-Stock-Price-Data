@@ -1,23 +1,16 @@
-import configparser
 import os
-import pandas as pd
-import pytz
 import pendulum
-import shutil
-import yfinance as yf
 import sys
 sys.path.append('/opt/airflow/')
 
 from utils.market_open_status import GetUSAMarketOpenStatus
-from datetime import datetime, timedelta
+from project.us_market.stock_daily_price_yf_ticker import StockTickerBaseDataProcessor
 
 from airflow import DAG
 from airflow.operators.python import PythonOperator, BranchPythonOperator
 from airflow.operators.empty import EmptyOperator
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 from airflow.providers.slack.operators.slack import SlackAPIPostOperator
-from airflow.providers.amazon.aws.transfers.local_to_s3 import LocalFilesystemToS3Operator
-from airflow.hooks.base import BaseHook
 
 """
 1. 각 Ticker 별 상장 시작 -> 현재까지 데이터를 수집
@@ -32,240 +25,14 @@ def get_pdt_date_from_utc_time(pendulum_utc_datetime):
 
     return pdt_date
 
-
-def make_history_data(ticker, start_date, end_date):
-    ticker = ticker.upper()
-    stock = yf.Ticker(ticker)
-
-    if start_date is None and end_date is None:
-        stock_history_df = stock.history(start='1993-01-01', auto_adjust=False)
-    elif end_date is None:
-        stock_history_df = stock.history(start=start_date, auto_adjust=False)
-    elif start_date is None:
-        stock_history_df = stock.history(start='1993-01-01', end=end_date, auto_adjust=False)
-    else:
-        stock_history_df = stock.history(start=start_date, end=end_date, auto_adjust=False)
-
-    stock_history_metadata = stock.history_metadata
-    stock_type = stock_history_metadata.get('instrumentType', None)
-    if stock_type is None:
-        print(f"ticker : {ticker}, Stock type is None")
-
-    # preprocessing part
-    stock_history_df.reset_index(inplace=True)
-    stock_history_df.columns = stock_history_df.columns.str.lower()
-    stock_history_df.columns = stock_history_df.columns.str.replace(' ', '_')
-
-    round_columns = ['open', 'high', 'low', 'close', 'adj_close']
-    stock_history_df[round_columns] = stock_history_df[round_columns].round(2)
-
-    stock_history_df['dividends'] = stock_history_df['dividends'].round(3)
-
-    stock_history_df['date'] = pd.to_datetime(stock_history_df['date'], format='%Y-%m-%d %H:%M:%S-%z')
-    stock_history_df['date'] = stock_history_df['date'].dt.strftime('%Y-%m-%d')
-
-    if 'capital_gains' in stock_history_df.columns:
-        # 'capital_gains' 컬럼이 존재하면 해당 컬럼 제거
-        stock_history_df = stock_history_df.drop('capital_gains', axis=1)
-
-    # Ticker 컬럼 추가
-    stock_history_df['ticker'] = ticker
-
-    # Type 컬럼 추가
-    if stock_type:
-        stock_history_df['stock_type'] = stock_type.lower()
-    else:
-        stock_history_df['stock_type'] = None
-
-    return stock_history_df
-
-
-def download_stock_index_data_from_wiki():
-    index_wiki_link_dict = {
-        'S&P500': "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies#S&P_500_component_stocks",
-        'NASDAQ100': "https://en.wikipedia.org/wiki/Nasdaq-100#Components",
-        'DOW30': "https://en.wikipedia.org/wiki/Dow_Jones_Industrial_Average#Components"
-    }
-
-    s_and_p_500_df = pd.read_html((index_wiki_link_dict.get('S&P500', None)), header=0)[0]
-    nasdaq_100_df = pd.read_html((index_wiki_link_dict.get('NASDAQ100', None)), header=0)[4]
-    dow_30_df = pd.read_html((index_wiki_link_dict.get('DOW30', None)), header=0)[1]
-
-    s_and_p_500_column_selection = ['Symbol', 'Security', 'GICS Sector', 'GICS Sub-Industry']
-    nasdaq_100_column_selection = ['Ticker', 'Company', 'GICS Sector', 'GICS Sub-Industry']
-    dow_30_column_selection = ['Symbol', 'Company']
-
-    s_and_p_500_df = s_and_p_500_df[s_and_p_500_column_selection]
-    nasdaq_100_df = nasdaq_100_df[nasdaq_100_column_selection]
-    dow_30_df = dow_30_df[dow_30_column_selection]
-
-    s_and_p_500_column_rename = {'Security': 'Company'}
-    nasdaq_100_column_rename = {'Ticker': 'Symbol'}
-
-    s_and_p_500_df.rename(columns=s_and_p_500_column_rename, inplace=True)
-    nasdaq_100_df.rename(columns=nasdaq_100_column_rename, inplace=True)
-
-    dfs = [s_and_p_500_df, nasdaq_100_df, dow_30_df]
-    index_df = pd.concat(dfs, ignore_index=True)
-
-    # keep='first': 중복된 값 중 첫 번째로 나오는 레코드를 유지하고 나머지 중복 레코드는 제거
-    index_df.drop_duplicates(subset=['Symbol'], keep='first', inplace=True)
-
-    # 각 지수에 속한 종목을 1(True) 또는 0(False) 으로 표시하는 열 추가
-    index_df['S&P500'] = index_df['Symbol'].isin(s_and_p_500_df['Symbol']).astype(int)
-    index_df['NASDAQ100'] = index_df['Symbol'].isin(nasdaq_100_df['Symbol']).astype(int)
-    index_df['DOW30'] = index_df['Symbol'].isin(dow_30_df['Symbol']).astype(int)
-
-    # AWS GLUE 에서 콤마 문제를 해결하기 위해 일부 컬럼의 경우 ' -' 처리
-    index_df['GICS Sub-Industry'] = index_df['GICS Sub-Industry'].str.replace(',', ' -')
-
-    # B class stock ticker(E.g. BRK.B -> BRK-B)
-    index_df['Symbol'] = index_df['Symbol'].str.replace(r'\.B', '-B', regex=True)
-
-    # 작업 편의상 symbol 을 다시 ticker 로 변경
-    index_df.rename(columns={'Symbol': 'Ticker'}, inplace=True)
-
-    # 컬럼명을 소문자로 변경
-    index_df.columns = index_df.columns.str.lower()
-
-    return index_df
-
-
-def make_stock_ticker_list(base_list):
-    additional_symbol_list = [
-        'DIA', 'SPY', 'QQQ', 'IWM', 'IWO', 'VTV',  # 6
-        'XLK', 'XLY', 'XLV', 'XLF', 'XLI', 'XLP', 'XLU', 'XLB', 'XLE', 'XLC', 'XLRE',  # 11
-        'COWZ', 'HYG', 'HYBB', 'STIP', 'SCHD', 'SPLG', 'IHI', 'TLT', 'KMLM', 'MOAT',  # 10
-        'EWY', 'EWJ',  # 2
-        'IYT',  # 1
-        'BROS', 'SLG', 'EPR', 'ZIP', 'SMCI', 'PLTR', 'CPNG',  # 7
-        '^GSPC', '^DJI', '^IXIC', '^RUT', '^TNX'
-    ]
-
-    add_result = base_list + additional_symbol_list
-    unique_ticker_list = list(dict.fromkeys(add_result).keys())  # Python 3.6+
-
-    return unique_ticker_list
-
-
-def get_data_directory_path():
-    target_directory_name = "airflow/data"
-    # current_directory_path = os.getcwd()
-    parent_directory_path = os.path.abspath(os.path.join(os.getcwd(), ".."))
-    target_directory_path = os.path.join(parent_directory_path, target_directory_name)
-
-    return target_directory_path
-
-
-def make_stock_directory(ticker):
-    base_directory = get_data_directory_path()
-    target_directory_path = f"{base_directory}{os.sep}{ticker}"
-    os.makedirs(target_directory_path, exist_ok=True)
-
-    return target_directory_path
-
-
-def make_stock_csv_file(ticker, target_date, wiki_df):
-    formatted_date = f"{target_date[:4]}-{target_date[4:6]}-{target_date[6:8]}"
-    start_date = formatted_date
-    date_obj = datetime.strptime(formatted_date, "%Y-%m-%d")
-    next_day = date_obj + timedelta(days=1)
-    end_date = next_day.strftime("%Y-%m-%d")
-    print(f"start_date, end_date : {start_date}, {end_date}")
-    ticker_history_df = make_history_data(ticker, start_date, end_date)
-    ticker_history_df = ticker_history_df.merge(
-        wiki_df[['ticker', 's&p500', 'nasdaq100', 'dow30']],
-        on='ticker',
-        how='left'
-    )
-
-    file_date = start_date.replace('-', '')  # 의도적으로 동일한 날짜를 CSV 파일명으로 지정하였음
-
-    target_directory_path = make_stock_directory(ticker)  # 종목별로 디렉터리 만들기
-    target_file_path = f"{target_directory_path}{os.sep}{ticker}_{file_date}_{file_date}.csv"
-    ticker_history_df.to_csv(target_file_path, index=False)
-
-
-def remove_files_in_directory(directory_path):
-    for item in os.listdir(directory_path):
-        item_path = os.path.join(directory_path, item)
-
-        if os.path.isfile(item_path):
-            # 파일일 경우 제거
-            os.remove(item_path)
-        elif os.path.isdir(item_path):
-            # 디렉터리일 경우 shutil.rmtree()를 사용하여 재귀적으로 제거
-            shutil.rmtree(item_path)
-
-
-def get_slack_channel_info():
-    configuration_directory = os.path.abspath(os.path.join(os.getcwd(), ".."))
-    config_file_path = os.path.join(
-        configuration_directory,
-        "airflow/config",
-        "config.ini"
-    )
-
-    config_object = configparser.ConfigParser()
-    config_object.read(config_file_path)
-
-    slack_message_token = config_object.get('SLACK_CONFIG', 'channel_access_token')
-    channel_name = config_object.get('SLACK_CONFIG', 'channel_name')
-    slack_channel_name = f"#{channel_name}"
-
-    slack_channel_info = {
-        'channel': slack_channel_name,
-        'token': slack_message_token
-    }
-
-    return slack_channel_info
-
-
-def get_stock_df_csv_files(target_date):
-    """
-    yf 의 이슈로 API 호출이 정상적으로 진행이 되지 않는 경우가 종종 있어서 While 문으로 처리하였음
-    """
-    stock_index_wiki_df = download_stock_index_data_from_wiki()
-    stock_index_ticker_list = stock_index_wiki_df['ticker'].tolist()
-    stock_ticker_list = make_stock_ticker_list(stock_index_ticker_list)
-
-    print(stock_ticker_list[0:10])
-
-    # stock_ticker_list = ['SPY', 'QQQ', 'AAPL']
-    # print(stock_ticker_list)
-
-    for idx, ticker in enumerate(stock_ticker_list):
-        try:
-            make_stock_csv_file(ticker, target_date, stock_index_wiki_df)
-        except Exception as e:
-            print(f"idx : {idx}, ticker : {ticker}, error : {e}")
-
-            n = 0
-            while n < 5:
-                try:
-                    make_stock_csv_file(ticker, target_date, stock_index_wiki_df)
-                    print(f"Success - idx : {idx}, ticker : {ticker}, n : {n}")
-                    break
-
-                except Exception as e:
-                    print(f"Error - idx : {idx}, ticker : {ticker}, e : {e}, n : {n}")
-                    n += 1
-
-                    if n >= 5:
-                        print(f"Fail - idx : {idx}, ticker : {ticker}, error : {e}, n : {n}")
-                        raise ValueError
-
-        if (idx % 100) == 0:
-            print(f"idx : {idx}, ticker : {ticker}")
-
-
 with DAG(
     dag_id="us_market_yf_ticker_daily_price",
-    start_date=pendulum.datetime(2023, 10, 26, 9),
+    start_date=pendulum.datetime(2023, 11, 6, 9),
     schedule_interval='30 0 * * 2-6',  # 한국 시간 아침 9시
     # default_args=default_args,
     catchup=False
 ) as dag:
+    stock_ticker_base_data_processor = StockTickerBaseDataProcessor()
     def get_market_open_status(**kwargs):
         check_market_open_status = GetUSAMarketOpenStatus()
 
@@ -314,8 +81,8 @@ with DAG(
         )
 
     def upload_csv_to_s3_bucket():
-        bucket_name = "your-bucket-name"
-        data_directory_path = get_data_directory_path()
+        bucket_name = 'your-bucket-name'
+        data_directory_path = stock_ticker_base_data_processor.get_data_directory_path()
 
         s3_hook = S3Hook('s3_conn')
 
@@ -332,12 +99,12 @@ with DAG(
                         replace=True
                     )
 
-        remove_files_in_directory(data_directory_path)
+        stock_ticker_base_data_processor.remove_files_in_directory(data_directory_path)
 
     def download_stock_csv_data(**kwargs):
         data_interval_end = kwargs["data_interval_end"]
         target_date = get_pdt_date_from_utc_time(data_interval_end)
-        get_stock_df_csv_files(target_date)
+        stock_ticker_base_data_processor.get_stock_df_csv_files(target_date)
 
 
     get_market_open_status_task = PythonOperator(
@@ -376,8 +143,8 @@ with DAG(
 
     slack_notification_task = SlackAPIPostOperator(
         task_id="slack_notification_task",
-        token=get_slack_channel_info()['token'],
-        channel=get_slack_channel_info()['channel'],
+        token=stock_ticker_base_data_processor.get_slack_channel_info()['token'],
+        channel=stock_ticker_base_data_processor.get_slack_channel_info()['channel'],
         text="{{ ti.xcom_pull(task_ids='make_slack_message', key='slack_message') }}",
     )
 

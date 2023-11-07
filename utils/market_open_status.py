@@ -1,13 +1,8 @@
-import configparser
 import requests
-import json
-import os
-import pytz
 import exchange_calendars as xcals
 import sys
 sys.path.append('/opt/airflow/')
 
-from datetime import datetime, timedelta
 from utils.configuration_control import ConfigurationControl
 
 
