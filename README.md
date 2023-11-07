@@ -26,7 +26,7 @@ Airflow Docker 설치 추가 내용
 
 **Airflow docker 와 생성한 디렉터리 내 항목들과 volume mount**
 ```bash
-mkdir -p ./dags ./logs ./plugins ./config ./data ./backfill ./utils
+mkdir -p ./dags ./logs ./plugins ./config ./data ./backfill ./utils ./project
 echo -e "AIRFLOW_UID=$(id -u)" > .env
 ```
 data 항목은 데이터 처리 과정중에 발생한 파일을 저장하기 위한 용도로 사용 합니다.
@@ -46,6 +46,7 @@ volumes:
   - ${AIRFLOW_PROJ_DIR:-.}/plugins:/opt/airflow/plugins
   - ${AIRFLOW_PROJ_DIR:-.}/data:/opt/airflow/data
   - ${AIRFLOW_PROJ_DIR:-.}/utils:/opt/airflow/utils
+  - ${AIRFLOW_PROJ_DIR:-.}/project:/opt/airflow/project
 ```
 
 **(3) Docker compose**
@@ -184,6 +185,7 @@ docker run -d my-custom-airflow:2.6.3
 ### 5. TODO
 
 공통
+- [x] airflow dags 를 비롯한 전체적인 코드 구조 변경
 - [x] S3 Partition 구조 변경 - 코드 변경
 - [x] config 와 market open status 분리
 - ~~[ ] Airflow Subdags 기능을 이용하여 kr, us market dag 묶기~~
