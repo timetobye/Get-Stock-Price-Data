@@ -1,24 +1,22 @@
 import os
 import pendulum
+import pandas as pd
+import shutil
 import sys
 sys.path.append('/opt/airflow/')
-
-from datetime import timedelta
 
 from utils.market_open_status import USAMarketOpenStatus
 from utils.slack_alert import SlackAlert
 from utils.utility_functions import UtilityFunctions
-from project.us_market.stock_daily_price_yf import StockDataProcessor
+from project.us_market.stock_ticker_info import GetTickerInfo
+from datetime import timedelta
 
 from airflow import DAG
 from airflow.operators.python import PythonOperator, BranchPythonOperator
 from airflow.operators.empty import EmptyOperator
 
 """
-1. SPY ETF 를 기준으로 하기 때문에 1993-01-01 을 시작날짜로 설정
-- S&P500 INDEX 를 기준으로 할 경우 1929년 부터 가능 - 그러나 그것은 다른 영역에서 처리 예정
-2. 2023-09 기준 약 500 ~ 600개 종목 정보를 가져오나, 향후 늘릴 계획. 방법은 준비 다 해둠
-3. 데이터 가져온 후 지정된 S3 bucket 에 들어감
+코드 추가 수정 예정 - 240101
 """
 
 slack_alert = SlackAlert()
@@ -30,10 +28,11 @@ default_args = {
     # 'on_success_callback': slack_alert.create_success_alert,
 }
 
+
 with DAG(
-    dag_id="us_market_yf_daily_price",
-    start_date=pendulum.datetime(2023, 12, 24, 19, tz="America/New_York"),
-    # schedule_interval='0 0 * * 2-6',  # 한국 시간 아침 9시
+    dag_id="us_market_yf_ticker_list",
+    start_date=pendulum.datetime(2023, 12, 29, 19, tz="America/New_York"),
+    # schedule_interval='30 23 * * 1-5',  # 한국 시간 아침 9시
     schedule_interval=None,  # trigger_dag_run
     default_args=default_args,
     on_success_callback=slack_alert.create_success_alert,
@@ -60,19 +59,52 @@ with DAG(
         else:
             return "market_opened_task"
 
-    def download_and_save_stock_data(**context):
+    def get_stock_info_df():
+        ticker_info_inst = GetTickerInfo()
+        stock_index_wiki_df, stock_ticker_list = ticker_info_inst.get_ticker_info()
+        all_ticker_info_list = []
+
+        # stock_ticker_list = ['SPY', 'QQQ', 'AAPL']  # test
+        for idx, ticker in enumerate(stock_ticker_list):
+            result = ticker_info_inst.get_stock_info_with_retry(ticker)
+            all_ticker_info_list.append(result)
+
+        all_ticker_info_df = pd.DataFrame.from_dict(all_ticker_info_list)
+        all_ticker_info_df = all_ticker_info_df.merge(
+            stock_index_wiki_df[['ticker', 's&p500', 'nasdaq100', 'dow30']],
+            on='ticker',
+            how='left'
+        )
+
+        return all_ticker_info_df
+
+
+    def save_csv_from_stock_info_df(df, target_date):
+        df['date'] = target_date
+
+        data_directory_path = UtilityFunctions.make_data_directory_path()
+        directory_path = f"{data_directory_path}{os.sep}{target_date}"
+        os.makedirs(directory_path, exist_ok=True)
+
+        all_ticker_file_name = f"{directory_path}{os.sep}" \
+                               f"us_market_ticker_{target_date}_{target_date}.csv"
+        df.to_csv(all_ticker_file_name, index=False)
+
+
+    def fetch_and_save_stock_data(target_date):
+        stock_info_df = get_stock_info_df()
+        save_csv_from_stock_info_df(stock_info_df, target_date)
+
+    def download_stock_ticker_csv_file(**context):
         data_interval_end = context["data_interval_end"]
         target_date = UtilityFunctions.get_est_date_from_utc_time(data_interval_end)
-
-        stock_data_processor = StockDataProcessor()
-        result_df = stock_data_processor.generate_stock_dataframe(target_date)
-        stock_data_processor.save_dataframe_to_csv(result_df)
+        fetch_and_save_stock_data(target_date)
 
     def upload_csv_to_s3_bucket():
         from airflow.models import Variable
         aws_json = Variable.get(key="aws", deserialize_json=True)
-        bucket_name = aws_json["aws_s3_bucket"]["yf_bucket"]
-        # bucket_name = aws_json["aws_s3_bucket"]["test_bucket"]  # test
+        bucket_name = aws_json["aws_s3_bucket"]["ticker_list_bucket"]
+        # bucket_name = aws_json["aws_s3_bucket"]["test_bucket"]
 
         data_directory_path = UtilityFunctions.make_data_directory_path()
         UtilityFunctions.upload_file_to_s3_bucket(data_directory_path, bucket_name)
@@ -84,9 +116,9 @@ with DAG(
         provide_context=True
     )
 
-    download_and_save_stock_data_task = PythonOperator(
-        task_id="download_and_save_stock_data",
-        python_callable=download_and_save_stock_data,
+    download_stock_ticker_data_csv_task = PythonOperator(
+        task_id="download_stock_ticker_data_csv",
+        python_callable=download_stock_ticker_csv_file,
         provide_context=True
     )
 
@@ -100,7 +132,7 @@ with DAG(
 
     done_task = EmptyOperator(task_id="done_task", trigger_rule="none_failed")
 
-    verify_market_open_status_task >> market_opened_task
     verify_market_open_status_task >> market_closed_task >> done_task
-    market_opened_task >> download_and_save_stock_data_task >> upload_csv_to_s3_bucket_task
+    verify_market_open_status_task >> market_opened_task
+    market_opened_task >> download_stock_ticker_data_csv_task >> upload_csv_to_s3_bucket_task
     upload_csv_to_s3_bucket_task >> done_task

@@ -8,45 +8,21 @@ import sys
 sys.path.append('/opt/airflow/')
 
 from datetime import datetime, timedelta
+from utils.utility_functions import UtilityFunctions
 from project.us_market.stock_ticker_info import GetTickerInfo
-from utils.configuration_use import ConfigurationUse
 
 """
 1. 각 Ticker 별 상장 시작 -> 현재까지 데이터를 수집
 2. S3 에는 Ticker 로 partition 을 설정하여 데이터 조회 할 수 있도록 데이터 업로드
+3. 20240101 - 1월 내 추가 수정 예정
 """
-def get_pdt_date_from_utc_time(pendulum_utc_datetime):
-    # utc_time : pendulum.datetime - kwargs["data_interval_end"] or kwargs["data_interval_start"]
-    pdt_time = pendulum_utc_datetime.in_timezone('America/Los_Angeles')
-    pdt_date = pdt_time.to_date_string().replace('-', '')  # "%Y%m%d"
-
-    return pdt_date
 
 
-class StockMaximumDrawdownProcessor(ConfigurationUse):
+class StockMDDProcessor:
     def __init__(self):
-        super().__init__()
+        pass
 
-    def get_data_directory_path(self):
-        target_directory_name = "airflow/data"
-        # current_directory_path = os.getcwd()
-        parent_directory_path = os.path.abspath(os.path.join(os.getcwd(), ".."))
-        target_directory_path = os.path.join(parent_directory_path, target_directory_name)
-
-        return target_directory_path
-
-    def remove_files_in_directory(self, directory_path):
-        for item in os.listdir(directory_path):
-            item_path = os.path.join(directory_path, item)
-
-            if os.path.isfile(item_path):
-                # 파일일 경우 제거
-                os.remove(item_path)
-            elif os.path.isdir(item_path):
-                # 디렉터리일 경우 shutil.rmtree()를 사용하여 재귀적으로 제거
-                shutil.rmtree(item_path)
-
-    def make_stock_mdd_csv_files(self, file_date):
+    def make_stock_mdd_csv_files(self):
         """
         yf 의 이슈로 API 호출이 정상적으로 진행이 되지 않는 경우가 종종 있어서 While 문으로 처리하였음
         """
@@ -60,7 +36,7 @@ class StockMaximumDrawdownProcessor(ConfigurationUse):
             maximum_drawdown_df = self._make_maximum_drawdown_df(stock_close_series_data)
 
             target_directory_path = self._make_stock_directory(ticker)  # 종목별로 디렉터리 만들기
-            target_file_path = f"{target_directory_path}{os.sep}{ticker}_mdd_{file_date}.csv"
+            target_file_path = f"{target_directory_path}{os.sep}{ticker}_mdd.csv"
             maximum_drawdown_df.to_csv(target_file_path, index=False)
 
     def _get_stock_close_series_data(self, ticker):
@@ -76,23 +52,11 @@ class StockMaximumDrawdownProcessor(ConfigurationUse):
         return mdd_period_df
 
     def _make_stock_directory(self, ticker):
-        base_directory = self.get_data_directory_path()
-        target_directory_path = f"{base_directory}{os.sep}{ticker}"
-        os.makedirs(target_directory_path, exist_ok=True)
+        base_directory = UtilityFunctions.make_data_directory_path()
+        stock_directory_path = f"{base_directory}{os.sep}{ticker}"
+        os.makedirs(stock_directory_path, exist_ok=True)
 
-        return target_directory_path
-
-    def get_slack_channel_info(self):
-        slack_message_token = self.config_object.get('SLACK_CONFIG', 'channel_access_token')
-        channel_name = self.config_object.get('SLACK_CONFIG', 'channel_name')
-        slack_channel_name = f"#{channel_name}"
-
-        slack_channel_info = {
-            'channel': slack_channel_name,
-            'token': slack_message_token
-        }
-
-        return slack_channel_info
+        return stock_directory_path
 
     def _get_max_drawdown_underwater(self, underwater):
         """

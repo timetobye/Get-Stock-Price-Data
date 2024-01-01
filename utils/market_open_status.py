@@ -3,10 +3,8 @@ import exchange_calendars as xcals
 import sys
 sys.path.append('/opt/airflow/')
 
-from utils.configuration_control import ConfigurationControl
 
-
-class GetKoreaMarketOpenStatus(ConfigurationControl):
+class GetKoreaMarketOpenStatus:
     """
     한국 마켓이 개장일인지 확인 하는 코드 입니다. 한국투자증권 API를 이용합니다.
     - 아래 답변 출처는 Q&A 페이지
@@ -18,14 +16,16 @@ class GetKoreaMarketOpenStatus(ConfigurationControl):
     """
 
     def __init__(self):
-        super().__init__()
-        self.key, self.secret_key, self.token = self.get_config()
+        self.hantoo_config_json = self.get_config()
+        self.app_key = self.hantoo_confing_json["config"]["key"]
+        self.app_secret_key = self.hantoo_confing_json["config"]["secret_key"]
+        self.token = self.hantoo_confing_json["config"]["access_token"]
 
-    def get_config(self):
-        key, secret_key = self.get_application_keys()
-        token = self.config_object.get('LIVE_APP', 'ACCESS_TOKEN')
+    def get_config_json(self):
+        from airflow.models import Variable
+        hantoo_config_json = Variable.get(key="hantoo", deserialize_json=True)
 
-        return key, secret_key, token
+        return hantoo_config_json
 
     def get_kr_market_status(self, target_date):
         # key, secret_key, token = get_config()
@@ -55,23 +55,17 @@ class GetKoreaMarketOpenStatus(ConfigurationControl):
         return opnd_yn_result
 
 
-class GetUSAMarketOpenStatus(ConfigurationControl):
+class USAMarketOpenStatus:
     """
     미국 장이 개장일인지 확인하는 코드 입니다. 한투에서 별도 제공을 해주고 있지 않기 때문에 Open Source exchange_calendars 를 사용합니다.
     - https://github.com/gerrymanoim/exchange_calendars
     """
 
     def __init__(self):
-        super().__init__()
-        self.key, self.secret_key, self.token = self.get_config()
+        pass
 
-    def get_config(self):
-        key, secret_key = self.get_application_keys()
-        token = self.config_object.get('LIVE_APP', 'ACCESS_TOKEN')
-
-        return key, secret_key, token
-
-    def get_us_market_status(self, target_date):
+    @staticmethod
+    def get_us_market_open_status(target_date):
         xnys = xcals.get_calendar("XNYS")
         open_status = xnys.is_session(target_date)  # True or False
 

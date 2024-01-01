@@ -1,5 +1,7 @@
 import pandas as pd
+import requests
 import sys
+import yfinance as yf
 sys.path.append('/opt/airflow/')
 
 """
@@ -86,3 +88,95 @@ class GetTickerInfo:
         unique_ticker_list = list(dict.fromkeys(add_result).keys())  # Python 3.6+
 
         return unique_ticker_list
+
+    def get_ticker_list_from_exchange(self):
+        """
+        yf 라이브러리 이슈로 현재는 사용 중지 상태, 이슈 해결 후 사용 예정 - 20231031
+        이쪽에서는 시가총액 10
+        """
+        nasdaq_url = "https://raw.githubusercontent.com/rreichel3/US-Stock-Symbols/main/nasdaq/nasdaq_tickers.txt"
+        amex_url = "https://raw.githubusercontent.com/rreichel3/US-Stock-Symbols/main/amex/amex_tickers.txt"
+        nyse_url = "https://raw.githubusercontent.com/rreichel3/US-Stock-Symbols/main/nyse/nyse_tickers.txt"
+        all_url = "https://raw.githubusercontent.com/rreichel3/US-Stock-Symbols/main/all/all_tickers.txt"
+        exchange_url_list = [nasdaq_url, amex_url, nyse_url, all_url]
+
+        all_ticker_list = []
+
+        for exchange_url in exchange_url_list:
+            response = requests.get(exchange_url)
+
+            if response.status_code == 200:
+                data_lines = response.text.split('\n')
+                # 빈 줄 제거
+                data_lines = [line.strip() for line in data_lines if line.strip()]
+                all_ticker_list += data_lines
+            else:
+                print("Failed to retrieve data from the URL.")
+
+        unique_ticker_list = list(dict.fromkeys(all_ticker_list).keys())
+
+        return all_ticker_list
+
+    def get_stock_info_with_retry(self, ticker):
+        try:
+            result = self.get_stock_info_data(ticker)
+
+            return result
+
+        except:
+            n = 0
+            while n < 5:
+                try:
+                    result = self.get_stock_info_data(ticker)
+
+                    return result
+
+                except Exception as e:
+                    n += 1
+                    if n >= 5:
+                        print(f"Fail - ticker : {ticker}, error : {e}, n : {n}")
+                        raise ValueError
+
+    def get_stock_info_data(self, ticker):
+        response_res = yf.Ticker(ticker)
+        stock_yf_basic_info = response_res.basic_info
+        quote_type = stock_yf_basic_info.quote_type
+
+        if quote_type == 'EQUITY':
+            marketCap_value = stock_yf_basic_info.market_cap
+            quote_type_lower = quote_type.lower()
+
+            stock_simple_info_dict = {
+                'ticker': ticker,
+                'quote_type': quote_type_lower,
+                'asset_size': marketCap_value,
+            }
+
+            return stock_simple_info_dict
+
+        elif quote_type == 'ETF':
+            quote_type_lower = quote_type.lower()
+
+            stock_simple_info_dict = {
+                'ticker': ticker,
+                'quote_type': quote_type_lower,
+                'asset_size': None
+            }
+
+            return stock_simple_info_dict
+
+        elif quote_type == 'INDEX':
+            quote_type_lower = quote_type.lower()
+
+            stock_simple_info_dict = {
+                'ticker': ticker,
+                'quote_type': quote_type,
+                'asset_size': None
+            }
+
+            return stock_simple_info_dict
+        else:
+            print(f"Information is not exist in YF : {ticker}, "
+                  f"stock_yf_basic_info['quoteType'] : {stock_yf_basic_info['quoteType']}")
+
+            raise ValueError

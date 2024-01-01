@@ -7,36 +7,19 @@ sys.path.append('/opt/airflow/')
 
 from datetime import datetime, timedelta
 from project.us_market.stock_ticker_info import GetTickerInfo
-from utils.configuration_use import ConfigurationUse
+
+from utils.utility_functions import UtilityFunctions
 
 """
 1. 각 Ticker 별 상장 시작 -> 현재까지 데이터를 수집
 2. S3 에는 Ticker 로 partition 을 설정하여 데이터 조회 할 수 있도록 데이터 업로드
+3. 20240101 - 1월 내 코드 수정 예정
 """
 
 
-class StockTickerBaseDataProcessor(ConfigurationUse):
+class StockTickerBaseDataProcessor:
     def __init__(self):
-        super().__init__()
-
-    def get_data_directory_path(self):
-        target_directory_name = "airflow/data"
-        # current_directory_path = os.getcwd()
-        parent_directory_path = os.path.abspath(os.path.join(os.getcwd(), ".."))
-        target_directory_path = os.path.join(parent_directory_path, target_directory_name)
-
-        return target_directory_path
-
-    def remove_files_in_directory(self, directory_path):
-        for item in os.listdir(directory_path):
-            item_path = os.path.join(directory_path, item)
-
-            if os.path.isfile(item_path):
-                # 파일일 경우 제거
-                os.remove(item_path)
-            elif os.path.isdir(item_path):
-                # 디렉터리일 경우 shutil.rmtree()를 사용하여 재귀적으로 제거
-                shutil.rmtree(item_path)
+        pass
 
     def get_stock_df_csv_files(self, target_date):
         """
@@ -45,7 +28,7 @@ class StockTickerBaseDataProcessor(ConfigurationUse):
         stock_index_wiki_df, stock_ticker_list = GetTickerInfo().get_ticker_info()
         print(stock_ticker_list[0:10])
 
-        # stock_ticker_list = ['SPY', 'QQQ', 'AAPL']
+        # stock_ticker_list = ['SPY', 'QQQ', 'AAPL']  # test
         # print(stock_ticker_list)
 
         for idx, ticker in enumerate(stock_ticker_list):
@@ -140,23 +123,8 @@ class StockTickerBaseDataProcessor(ConfigurationUse):
         return stock_history_df
 
     def _make_stock_directory(self, ticker):
-        base_directory = self.get_data_directory_path()
-        target_directory_path = f"{base_directory}{os.sep}{ticker}"
-        os.makedirs(target_directory_path, exist_ok=True)
+        base_directory = UtilityFunctions.make_data_directory_path()
+        stock_directory_path = f"{base_directory}{os.sep}{ticker}"
+        os.makedirs(stock_directory_path, exist_ok=True)
 
-        return target_directory_path
-
-    def get_slack_channel_info(self):
-        slack_message_token = self.config_object.get('SLACK_CONFIG', 'channel_access_token')
-        channel_name = self.config_object.get('SLACK_CONFIG', 'channel_name')
-        slack_channel_name = f"#{channel_name}"
-
-        slack_channel_info = {
-            'channel': slack_channel_name,
-            'token': slack_message_token
-        }
-
-        return slack_channel_info
-
-
-
+        return stock_directory_path

@@ -7,42 +7,24 @@ sys.path.append('/opt/airflow/')
 
 from datetime import datetime, timedelta
 from project.us_market.stock_ticker_info import GetTickerInfo
-from utils.configuration_use import ConfigurationUse
+
+from utils.utility_functions import UtilityFunctions
 
 
-class StockDataProcessor(ConfigurationUse):
+class StockDataProcessor:
     def __init__(self):
-        super().__init__()
+        pass
 
-    def get_data_directory_path(self):
-        target_directory_name = "airflow/data"
-        # current_directory_path = os.getcwd()
-        parent_directory_path = os.path.abspath(os.path.join(os.getcwd(), ".."))
-        target_directory_path = os.path.join(parent_directory_path, target_directory_name)
-
-        return target_directory_path
-
-    def remove_files_in_directory(self, directory_path):
-        for item in os.listdir(directory_path):
-            item_path = os.path.join(directory_path, item)
-
-            if os.path.isfile(item_path):
-                # 파일일 경우 제거
-                os.remove(item_path)
-            elif os.path.isdir(item_path):
-                # 디렉터리일 경우 shutil.rmtree()를 사용하여 재귀적으로 제거
-                shutil.rmtree(item_path)
-
-    def get_stock_df_csv_files(self, target_date):
+    def generate_stock_dataframe(self, target_date):
         """
         yf 의 이슈로 API 호출이 정상적으로 진행이 되지 않는 경우가 종종 있어서 While 문으로 처리하였음
         """
+        # TODO : change position
         stock_index_wiki_df, stock_ticker_list = GetTickerInfo().get_ticker_info()
-        data_directory_path = self.get_data_directory_path()
 
         print(stock_ticker_list[0:10])
         dataframes = []  # 모든 종목 - 모든 기간
-        # stock_ticker_list = ["SPY", "QQQ" ,"AAPL"]  # test
+        # stock_ticker_list = ["SPY", "QQQ", "AAPL"]  # test
         for idx, ticker in enumerate(stock_ticker_list):
             try:
                 stock_df = self._get_stock_dataframe(ticker, target_date, stock_index_wiki_df)
@@ -73,10 +55,17 @@ class StockDataProcessor(ConfigurationUse):
         concat_df = pd.concat(dataframes, ignore_index=True)
         concat_df['date'] = pd.to_datetime(concat_df['date'])
 
-        for idx, (date, group) in enumerate(concat_df.groupby(concat_df['date'])):
+        return concat_df
+
+    def save_dataframe_to_csv(self, df):
+        data_directory_path = UtilityFunctions.make_data_directory_path()
+
+        group_by_concat_df = df.groupby(df['date'])
+        for idx, (date, group) in enumerate(group_by_concat_df):
             date_str = date.strftime("%Y%m%d")
             directory_path = f"{data_directory_path}{os.sep}{date_str}"
             os.makedirs(directory_path, exist_ok=True)
+
             filename = f'{directory_path}{os.sep}market_{date_str}_{date_str}.csv'
             group.to_csv(filename, index=False)
 
@@ -142,15 +131,3 @@ class StockDataProcessor(ConfigurationUse):
         )
 
         return ticker_history_df
-
-    def get_slack_channel_info(self):
-        slack_message_token = self.config_object.get('SLACK_CONFIG', 'channel_access_token')
-        channel_name = self.config_object.get('SLACK_CONFIG', 'channel_name')
-        slack_channel_name = f"#{channel_name}"
-
-        slack_channel_info = {
-            'channel': slack_channel_name,
-            'token': slack_message_token
-        }
-
-        return slack_channel_info
