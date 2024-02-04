@@ -29,6 +29,8 @@ echo -e "AIRFLOW_UID=$(id -u)" > .env
 
 로컬 환경에서 작업을 할 때는 경로 설정을 해줘야 합니다. Airflow 에서는 다양한 방법을 안내 하고 있는데 아래의 방법으로 처리 
 ```bash
+# .env
+
 WORKSPACE_FOLDER='your airflow WORKSPACE_FOLDER'
 PYTHONPATH=${WORKSPACE_FOLDER}/plugins
 ```
