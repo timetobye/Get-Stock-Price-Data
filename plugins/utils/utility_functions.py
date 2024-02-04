@@ -8,10 +8,10 @@ class UtilityFunctions:
         pass
 
     @staticmethod
-    def make_data_directory_path():
+    def make_data_directory_path(dir_name):
         from airflow.models import Variable
         dir_json = Variable.get(key="directory", deserialize_json=True)
-        data_dir_base_name = dir_json["data"]  # "airflow/data"
+        data_dir_base_name = dir_json["data"][dir_name]  # "airflow/data/dir_name"
 
         parent_directory_path = os.path.abspath(os.path.join(os.getcwd(), ".."))
         data_directory_path = os.path.join(parent_directory_path, data_dir_base_name)
@@ -34,6 +34,7 @@ class UtilityFunctions:
     def get_est_date_from_utc_time(pendulum_utc_datetime):
         # utc_time : pendulum.datetime - context["data_interval_end"] or context["data_interval_start"]
         est_time = pendulum_utc_datetime.in_timezone("America/New_York")
+        # print(f"Estimated date : {est_time}")
         est_date = est_time.to_date_string().replace('-', '')  # "%Y%m%d"
 
         return est_date

@@ -1,7 +1,6 @@
 import requests
 import exchange_calendars as xcals
 import sys
-sys.path.append('/opt/airflow/')
 
 
 class GetKoreaMarketOpenStatus:

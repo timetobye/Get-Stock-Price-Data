@@ -2,14 +2,10 @@ import empyrical as ep
 import numpy as np
 import os
 import pandas as pd
-import shutil
 import yfinance as yf
-import sys
-sys.path.append('/opt/airflow/')
 
-from datetime import datetime, timedelta
+from datetime import datetime
 from utils.utility_functions import UtilityFunctions
-from project.us_market.stock_ticker_info import GetTickerInfo
 
 """
 1. 각 Ticker 별 상장 시작 -> 현재까지 데이터를 수집
@@ -22,15 +18,8 @@ class StockMDDProcessor:
     def __init__(self):
         pass
 
-    def make_stock_mdd_csv_files(self):
-        """
-        yf 의 이슈로 API 호출이 정상적으로 진행이 되지 않는 경우가 종종 있어서 While 문으로 처리하였음
-        """
-        stock_index_wiki_df, stock_ticker_list = GetTickerInfo().get_ticker_info()
-        print(stock_ticker_list[0:10])
-
-        # stock_ticker_list = ['AAPL', 'SPY', '^GSPC']  # test
-
+    # TODO : 여기도 티커별로 만드는 것 이용해서 처리하면 될 것 같다.
+    def make_stock_mdd_csv_files(self, stock_ticker_list):
         for idx, ticker in enumerate(stock_ticker_list):
             stock_close_series_data = self._get_stock_close_series_data(ticker)
             maximum_drawdown_df = self._make_maximum_drawdown_df(stock_close_series_data)
@@ -52,7 +41,8 @@ class StockMDDProcessor:
         return mdd_period_df
 
     def _make_stock_directory(self, ticker):
-        base_directory = UtilityFunctions.make_data_directory_path()
+        dir_name = "yf_individual_stock_mdd"
+        base_directory = UtilityFunctions.make_data_directory_path(dir_name)
         stock_directory_path = f"{base_directory}{os.sep}{ticker}"
         os.makedirs(stock_directory_path, exist_ok=True)
 

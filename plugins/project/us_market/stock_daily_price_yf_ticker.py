@@ -1,73 +1,73 @@
 import os
 import pandas as pd
-import shutil
+import time
 import yfinance as yf
-import sys
-sys.path.append('/opt/airflow/')
 
 from datetime import datetime, timedelta
-from project.us_market.stock_ticker_info import GetTickerInfo
-
 from utils.utility_functions import UtilityFunctions
 
+"""
+1. 각 Ticker 별 상장 시작 -> 현재까지 데이터를 수집
+2. S3 에는 Ticker 로 partition 을 설정하여 데이터 조회 할 수 있도록 데이터 업로드
+3. 20240101 - 1월 내 코드 수정 예정
+"""
 
-class StockDataProcessor:
+
+# TODO : Class 이름 다시 명명 할 것 - 적잘한 이름으로!
+class StockTickerBaseDataProcessor:
     def __init__(self):
         pass
 
-    def generate_stock_dataframe(self, target_date):
+    def get_stock_df_csv_files(self, target_date, stock_ticker_list):
         """
         yf 의 이슈로 API 호출이 정상적으로 진행이 되지 않는 경우가 종종 있어서 While 문으로 처리하였음
         """
-        # TODO : change position
-        stock_index_wiki_df, stock_ticker_list = GetTickerInfo().get_ticker_info()
-
         print(stock_ticker_list[0:10])
-        dataframes = []  # 모든 종목 - 모든 기간
-        # stock_ticker_list = ["SPY", "QQQ", "AAPL"]  # test
+
+        # stock_ticker_list = ['SPY', 'QQQ', 'AAPL']  # test
+        # print(stock_ticker_list)
+
         for idx, ticker in enumerate(stock_ticker_list):
             try:
-                stock_df = self._get_stock_dataframe(ticker, target_date, stock_index_wiki_df)
-                dataframes.append(stock_df)
+                self._make_stock_csv_file(ticker, target_date)
             except Exception as e:
                 print(f"idx : {idx}, ticker : {ticker}, error : {e}")
 
                 n = 0
-                while n < 5:
+                max_rotate_value = 10
+                while n < max_rotate_value:
                     try:
-                        stock_df = self._get_stock_dataframe(ticker, target_date, stock_index_wiki_df)
-                        dataframes.append(stock_df)
+                        self._make_stock_csv_file(ticker, target_date)
                         print(f"Success - idx : {idx}, ticker : {ticker}, n : {n}")
                         break
 
                     except Exception as e:
                         print(f"Error - idx : {idx}, ticker : {ticker}, e : {e}, n : {n}")
                         n += 1
+                        time.sleep(2.0)
 
-                        if n >= 5:
+                        if n >= max_rotate_value:
                             print(f"Fail - idx : {idx}, ticker : {ticker}, error : {e}, n : {n}")
                             raise ValueError
 
             if (idx % 100) == 0:
                 print(f"idx : {idx}, ticker : {ticker}")
 
-        # 데이터프레임 하나로 합치기
-        concat_df = pd.concat(dataframes, ignore_index=True)
-        concat_df['date'] = pd.to_datetime(concat_df['date'])
+    def _make_stock_csv_file(self, ticker, target_date):
+        # target_date : YYYYMMDD
+        date_obj = datetime.strptime(target_date, "%Y%m%d")
+        next_day = date_obj + timedelta(days=1)
 
-        return concat_df
+        start_date = date_obj.strftime("%Y-%m-%d")
+        end_date = next_day.strftime("%Y-%m-%d")
+        print(f"start_date, end_date : {start_date}, {end_date}")
 
-    def save_dataframe_to_csv(self, df):
-        data_directory_path = UtilityFunctions.make_data_directory_path()
+        ticker_history_df = self._make_history_data(ticker, start_date, end_date)
 
-        group_by_concat_df = df.groupby(df['date'])
-        for idx, (date, group) in enumerate(group_by_concat_df):
-            date_str = date.strftime("%Y%m%d")
-            directory_path = f"{data_directory_path}{os.sep}{date_str}"
-            os.makedirs(directory_path, exist_ok=True)
-
-            filename = f'{directory_path}{os.sep}market_{date_str}_{date_str}.csv'
-            group.to_csv(filename, index=False)
+        file_date = start_date.replace('-', '')  # 의도적으로 동일한 날짜를 CSV 파일명으로 지정하였음
+        target_directory_path = self._make_stock_directory(ticker)  # 종목별로 디렉터리 만들기
+        target_file_path = f"{target_directory_path}{os.sep}{ticker}_{file_date}_{file_date}.csv"
+        ticker_history_df.to_csv(target_file_path, index=False)
 
     def _make_history_data(self, ticker, start_date, end_date):
         ticker = ticker.upper()
@@ -115,19 +115,10 @@ class StockDataProcessor:
 
         return stock_history_df
 
-    def _get_stock_dataframe(self, ticker, target_date, wiki_df):
-        formatted_date = f"{target_date[:4]}-{target_date[4:6]}-{target_date[6:8]}"
-        start_date = formatted_date
-        date_obj = datetime.strptime(formatted_date, "%Y-%m-%d")
-        next_day = date_obj + timedelta(days=1)
-        end_date = next_day.strftime("%Y-%m-%d")
-        print(f"start_date, end_date : {start_date}, {end_date}")
+    def _make_stock_directory(self, ticker):
+        dir_name = "yf_individual_stock_prices"
+        base_directory = UtilityFunctions.make_data_directory_path(dir_name)
+        stock_directory_path = f"{base_directory}{os.sep}{ticker}"
+        os.makedirs(stock_directory_path, exist_ok=True)
 
-        ticker_history_df = self._make_history_data(ticker, start_date, end_date)
-        ticker_history_df = ticker_history_df.merge(
-            wiki_df[['ticker', 's&p500', 'nasdaq100', 'dow30']],
-            on='ticker',
-            how='left'
-        )
-
-        return ticker_history_df
+        return stock_directory_path

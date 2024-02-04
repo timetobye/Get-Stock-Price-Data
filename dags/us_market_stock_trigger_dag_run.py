@@ -1,6 +1,4 @@
 import pendulum
-import sys
-sys.path.append('/opt/airflow/')
 
 from datetime import timedelta
 from utils.slack_alert import SlackAlert
@@ -21,7 +19,7 @@ default_args = {
 with DAG(
     dag_id='us_market_trigger_dag_run_operator',
     start_date=pendulum.datetime(2023, 11, 30, 19, tz="America/New_York"),
-    schedule='0 19 * * 1-5',
+    schedule='0 21 * * 1-5',
     default_args=default_args,
     catchup=False
 ) as dag:
@@ -37,11 +35,6 @@ with DAG(
         wait_for_completion=True,
         allowed_states=['success']
     )
-
-    # # 임시로 설정
-    # trigger_dag_task_1 = EmptyOperator(
-    #     task_id='trigger_dag_task_1'
-    # )
 
     trigger_dag_task_2 = TriggerDagRunOperator(
         task_id='trigger_dag_task_2',
