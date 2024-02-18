@@ -159,45 +159,47 @@ class StockDataHandler:
                         raise ValueError
 
     def _get_stock_info_data(self, ticker):
-        response_res = yf.Ticker(ticker)
-        stock_yf_basic_info = response_res.info
-        quote_type = stock_yf_basic_info['quoteType']
+        yf_ticker_obj = yf.Ticker(ticker)
+        stock_profile = yf_ticker_obj.info
+        quote_type = stock_profile.get('quoteType', None)
 
         if quote_type == 'EQUITY':
-            marketCap_value = stock_yf_basic_info['marketCap']
-            quote_type_lower = quote_type.lower()
-
             stock_simple_info_dict = {
                 'ticker': ticker,
-                'quote_type': quote_type_lower,
-                'asset_size': marketCap_value,
+                'quote_type': quote_type.lower(),
+                'asset_size': stock_profile.get('marketCap', None),
             }
 
             return stock_simple_info_dict
 
         elif quote_type == 'ETF':
-            quote_type_lower = quote_type.lower()
-
             stock_simple_info_dict = {
                 'ticker': ticker,
-                'quote_type': quote_type_lower,
-                'asset_size': None
+                'quote_type': quote_type.lower(),
+                'asset_size': stock_profile.get('totalAssets', None)
             }
 
             return stock_simple_info_dict
 
         elif quote_type == 'INDEX':
-            quote_type_lower = quote_type.lower()
-
             stock_simple_info_dict = {
                 'ticker': ticker,
-                'quote_type': quote_type_lower,
+                'quote_type': quote_type.lower(),
                 'asset_size': None
             }
 
             return stock_simple_info_dict
+
+        elif quote_type is None:
+            stock_simple_info_dict = {
+                'ticker': None,
+                'quote_type': None,
+                'asset_size': None
+            }
+
+            return stock_simple_info_dict
+
         else:
-            print(f"Information is not exist in YF : {ticker}, "
-                  f"stock_yf_basic_info['quoteType'] : {stock_yf_basic_info['quoteType']}")
+            print(f"Information is not exist in YF : {ticker}")
 
             raise ValueError
