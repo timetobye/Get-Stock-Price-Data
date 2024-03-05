@@ -26,10 +26,11 @@ default_args = {
 with DAG(
     dag_id="us_market_yf_maximum_drawdown",
     start_date=pendulum.datetime(2023, 12, 24, 19, tz="America/New_York"),
-    schedule_interval='0 1 * * 7',  # 매주 일요일 오전 10시 - KST
+    schedule_interval='0 1 * * 7',
     default_args=default_args,
     on_success_callback=slack_alert.create_success_alert,
-    catchup=False
+    catchup=False,
+    tags=['us_market', 'stock']
 ) as dag:
     @task(task_id='run_sp500_task')
     def run_sp500_task():
@@ -95,7 +96,11 @@ with DAG(
         op_args=['yf_individual_stock_mdd']
     )
 
-    done_task = EmptyOperator(task_id="done_task", trigger_rule="none_failed")
+    done_task = EmptyOperator(
+        task_id="done_task",
+        trigger_rule="none_failed",
+        on_success_callback=[slack_alert.create_success_alert]
+    )
 
     start_task >> [run_sp500, run_nasdaq100, run_dow30, run_sp400, run_sp600, run_various_stock] >> upload_csv_to_s3_bucket_task
     upload_csv_to_s3_bucket_task >> done_task

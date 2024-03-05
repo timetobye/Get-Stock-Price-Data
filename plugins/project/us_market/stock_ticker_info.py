@@ -104,20 +104,23 @@ class StockDataHandler:
         from airflow.models import Variable
         variety_ticker_list = Variable.get(key="additional_ticker", deserialize_json=True)
         print(f"variety_ticker_list : {variety_ticker_list}")
-        variety_df = pd.DataFrame(variety_ticker_list, columns=["ticker"])
+        various_stock_df = pd.DataFrame(variety_ticker_list, columns=["ticker"])
 
-        return variety_df
+        return various_stock_df
 
     # TODO: 이부분 수정 해야함 - 계속 수정 필요
     def combine_and_process_stock_data(self, dfs):
-        # dfs = [sp500_df, nasdaq100_df, dow30_df, sp400_df, sp600_df, var_df]  # 20240106 기준
-        sp500_df, nasdaq100_df, dow30_df = dfs[0], dfs[1], dfs[2]
+        """
+        :param dfs: [sp500_df, nasdaq100_df, dow30_df, sp400_df, sp600_df, var_df]  # 20240106 기준
+        :return: concat_df from dfs
+        """
         concat_df = pd.concat(dfs, ignore_index=True)
 
         # keep='first': 중복된 값 중 첫 번째로 나오는 레코드를 유지하고 나머지 중복 레코드는 제거
         concat_df.drop_duplicates(subset=['ticker'], keep='first', inplace=True)
 
         # 각 지수에 속한 종목을 1(True) 또는 0(False) 으로 표시하는 열 추가 - 대형주만 처리함
+        sp500_df, nasdaq100_df, dow30_df = dfs[0], dfs[1], dfs[2]
         concat_df['s&p500'] = concat_df['ticker'].isin(sp500_df['ticker']).astype(int)
         concat_df['nasdaq100'] = concat_df['ticker'].isin(nasdaq100_df['ticker']).astype(int)
         concat_df['dow30'] = concat_df['ticker'].isin(dow30_df['ticker']).astype(int)
@@ -125,49 +128,48 @@ class StockDataHandler:
         return concat_df
 
     # TODO : 향후에 데이터를 더 모아야 하는 코드로 변경 해야 하므로, 아래부터 끝까지 해당하는 코드는 별도 분리 할 예정
-    def get_stock_df_with_info(self, stock_ticker_list):
+    def make_stock_info_df(self, stock_ticker_list):
         stock_info_list = []
         for ticker in stock_ticker_list:
-            result = self._get_stock_info_with_retry(ticker)
+            result = self._get_stock_info(ticker)
             stock_info_list.append(result)
 
-        stock_info_df = pd.DataFrame.from_dict(stock_info_list)  # Pandas 에서 만드는 방법
+        stock_info_df = pd.DataFrame.from_dict(stock_info_list)  # Pandas 에서 데이터프레임 만드는 방법
 
         return stock_info_df
 
-    def _get_stock_info_with_retry(self, ticker):
+    def _get_stock_info(self, ticker):
         try:
-            result = self._get_stock_info_data(ticker)
+            stock_info = self._get_stock_info_data(ticker)
 
-            return result
+            return stock_info
 
+        # TODO : 에러 처리에 대해서는 추가적인 대응이 필요함. yfinance API 가 정상적으로 실행되지 않을 때가 종종 있음.
         except:
-            n = 0
-            max_rotate_value = 10
+            n, max_rotate_value = 0, 5
             while n < max_rotate_value:
                 try:
-                    result = self._get_stock_info_data(ticker)
+                    stock_info = self._get_stock_info_data(ticker)
 
-                    return result
+                    return stock_info
 
                 except Exception as e:
                     n += 1
                     time.sleep(2.0)
 
-                    if n >= max_rotate_value:
-                        print(f"Fail - ticker : {ticker}, error : {e}, n : {n}")
-                        raise ValueError
+            print(f"Fail - ticker : {ticker}, error : {e}, n : {n}")
+            raise ValueError
 
     def _get_stock_info_data(self, ticker):
         yf_ticker_obj = yf.Ticker(ticker)
-        stock_profile = yf_ticker_obj.info
-        quote_type = stock_profile.get('quoteType', None)
+        stock_info = yf_ticker_obj.info
+        quote_type = stock_info.get('quoteType')
 
         if quote_type == 'EQUITY':
             stock_simple_info_dict = {
                 'ticker': ticker,
                 'quote_type': quote_type.lower(),
-                'asset_size': stock_profile.get('marketCap', None),
+                'asset_size': stock_info.get('marketCap'),
             }
 
             return stock_simple_info_dict
@@ -176,7 +178,7 @@ class StockDataHandler:
             stock_simple_info_dict = {
                 'ticker': ticker,
                 'quote_type': quote_type.lower(),
-                'asset_size': stock_profile.get('totalAssets', None)
+                'asset_size': stock_info.get('totalAssets')
             }
 
             return stock_simple_info_dict

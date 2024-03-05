@@ -4,9 +4,6 @@ import shutil
 
 
 class UtilityFunctions:
-    def __init__(self):
-        pass
-
     @staticmethod
     def make_data_directory_path(dir_name):
         from airflow.models import Variable
@@ -32,10 +29,7 @@ class UtilityFunctions:
 
     @staticmethod
     def get_est_date_from_utc_time(pendulum_utc_datetime):
-        # utc_time : pendulum.datetime - context["data_interval_end"] or context["data_interval_start"]
-        est_time = pendulum_utc_datetime.in_timezone("America/New_York")
-        # print(f"Estimated date : {est_time}")
-        est_date = est_time.to_date_string().replace('-', '')  # "%Y%m%d"
+        est_date = pendulum_utc_datetime.in_timezone("America/New_York").format('YYYYMMDD')
 
         return est_date
 

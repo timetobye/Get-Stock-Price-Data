@@ -2,9 +2,10 @@ import os
 import pandas as pd
 import time
 import yfinance as yf
+import pendulum
 
-from datetime import datetime, timedelta
 from utils.utility_functions import UtilityFunctions
+
 
 # TODO : Class 이름 다시 명명 할 것 - 적잘한 이름으로!
 class StockDataProcessor:
@@ -15,20 +16,16 @@ class StockDataProcessor:
         """
         yf 의 이슈로 API 호출이 정상적으로 진행이 되지 않는 경우가 종종 있어서 While 문으로 처리하였음
         """
-        # TODO : change position
-
-        print(stock_ticker_list[0:10])
+        # TODO : 이 부분을 어떻게 해서든 깔끔하게 해결해야 함
         dataframes = []  # 모든 종목 - 모든 기간
-        # stock_ticker_list = ["SPY", "QQQ", "AAPL"]  # test
+
         for idx, ticker in enumerate(stock_ticker_list):
             try:
                 stock_df = self._get_stock_dataframe(ticker, target_date)
                 dataframes.append(stock_df)
-            except Exception as e:
-                print(f"idx : {idx}, ticker : {ticker}, error : {e}")
 
-                n = 0
-                max_rotate_value = 10
+            except Exception as error:
+                n, max_rotate_value = 0, 5
                 while n < max_rotate_value:
                     try:
                         stock_df = self._get_stock_dataframe(ticker, target_date)
@@ -41,9 +38,8 @@ class StockDataProcessor:
                         n += 1
                         time.sleep(2.0)
 
-                        if n >= max_rotate_value:
-                            print(f"Fail - idx : {idx}, ticker : {ticker}, error : {e}, n : {n}")
-                            raise ValueError
+                print(f"Fail - idx : {idx}, ticker : {ticker}, error : {error}, n : {n}")
+                raise ValueError
 
             if (idx % 100) == 0:
                 print(f"idx : {idx}, ticker : {ticker}")
@@ -65,63 +61,60 @@ class StockDataProcessor:
 
             filename = f'{directory_path}{os.sep}market_{date_str}_{date_str}.csv'
             group.to_csv(filename, index=False)
+    
+    def _get_stock_dataframe(self, ticker, target_date):
+        parse_date = pendulum.parse(target_date)
+        start_date = parse_date.to_date_string()
+        end_date = parse_date.add(days=1).to_date_string()
 
-    def _make_history_data(self, ticker, start_date, end_date):
-        ticker = ticker.upper()
-        stock = yf.Ticker(ticker)
+        try:
+            ticker_history_df = self._make_stock_history_dataframe(ticker, start_date, end_date)
 
-        if start_date is None and end_date is None:
-            stock_history_df = stock.history(start='1993-01-01', auto_adjust=False)
-        elif end_date is None:
-            stock_history_df = stock.history(start=start_date, auto_adjust=False)
-        elif start_date is None:
-            stock_history_df = stock.history(start='1993-01-01', end=end_date, auto_adjust=False)
-        else:
-            stock_history_df = stock.history(start=start_date, end=end_date, auto_adjust=False)
+            return ticker_history_df
 
-        stock_history_metadata = stock.history_metadata
-        stock_type = stock_history_metadata.get('instrumentType', None)
-        if stock_type is None:
-            print(f"ticker : {ticker}, Stock type is None")
+        # TODO : 에러 처리 코드 수정이 필요
+        except Exception as e:
+            raise Exception(f"Exception Error")
+
+    def _make_stock_history_dataframe(self, ticker, start_date, end_date):
+        upper_ticker = ticker.upper()
+        stock = yf.Ticker(upper_ticker)
 
         # preprocessing part
+        stock_history_df = stock.history(start=start_date, end=end_date, auto_adjust=False)
         stock_history_df.reset_index(inplace=True)
-        stock_history_df.columns = stock_history_df.columns.str.lower()
-        stock_history_df.columns = stock_history_df.columns.str.replace(' ', '_')
+        stock_history_df.columns = stock_history_df.columns.str.lower().str.replace(' ', '_')
+        column_list = stock_history_df.columns.tolist()
 
-        round_columns = ['open', 'high', 'low', 'close', 'adj_close']
-        stock_history_df[round_columns] = stock_history_df[round_columns].round(2)
-
-        stock_history_df['dividends'] = stock_history_df['dividends'].round(3)
-
-        stock_history_df['date'] = pd.to_datetime(stock_history_df['date'], format='%Y-%m-%d %H:%M:%S-%z')
         stock_history_df['date'] = stock_history_df['date'].dt.strftime('%Y-%m-%d')
 
-        if 'capital_gains' in stock_history_df.columns:
+        rounded_value_columns = ['open', 'high', 'low', 'close', 'adj_close']
+        stock_history_df[rounded_value_columns] = stock_history_df[rounded_value_columns].round(2)
+
+        # yfinance open source - key error - dividends
+        if 'dividends' in column_list:
+            stock_history_df['dividends'] = stock_history_df['dividends'].round(4)
+        else:
+            stock_history_df['Dividends'] = stock_history_df['Dividends'].round(4)
+            stock_history_df.rename(columns={'Dividends': 'dividends'}, inplace=True)
+
+        if 'capital_gains' in column_list:
             # 'capital_gains' 컬럼이 존재하면 해당 컬럼 제거
             stock_history_df = stock_history_df.drop('capital_gains', axis=1)
 
         # Ticker 컬럼 추가
         stock_history_df['ticker'] = ticker
 
-        # Type 컬럼 추가
-        if stock_type:
+        # stock metadata
+        stock_history_metadata = stock.history_metadata
+        stock_type = stock_history_metadata.get('instrumentType')
+        if stock_type is not None:
             stock_history_df['stock_type'] = stock_type.lower()
         else:
             stock_history_df['stock_type'] = None
+            print(f"ticker : {upper_ticker}, Stock type is None")
 
         return stock_history_df
 
-    def _get_stock_dataframe(self, ticker, target_date):
-        # target_date : YYYYMMDD
-        date_obj = datetime.strptime(target_date, "%Y%m%d")
-        next_day = date_obj + timedelta(days=1)
 
-        start_date = date_obj.strftime("%Y-%m-%d")
-        end_date = next_day.strftime("%Y-%m-%d")
 
-        # print(f"start_date, end_date : {start_date}, {end_date}")
-
-        ticker_history_df = self._make_history_data(ticker, start_date, end_date)
-
-        return ticker_history_df

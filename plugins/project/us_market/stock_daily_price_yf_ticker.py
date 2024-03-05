@@ -23,9 +23,7 @@ class StockTickerBaseDataProcessor:
         yf 의 이슈로 API 호출이 정상적으로 진행이 되지 않는 경우가 종종 있어서 While 문으로 처리하였음
         """
         print(stock_ticker_list[0:10])
-
-        # stock_ticker_list = ['SPY', 'QQQ', 'AAPL']  # test
-        # print(stock_ticker_list)
+        # stock_ticker_list = stock_ticker_list[0:10]
 
         for idx, ticker in enumerate(stock_ticker_list):
             try:

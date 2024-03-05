@@ -21,7 +21,8 @@ with DAG(
     start_date=pendulum.datetime(2023, 11, 30, 19, tz="America/New_York"),
     schedule='0 21 * * 1-5',
     default_args=default_args,
-    catchup=False
+    catchup=False,
+    tags=['us_market', 'stock']
 ) as dag:
 
     start_task = BashOperator(

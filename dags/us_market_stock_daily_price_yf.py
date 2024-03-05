@@ -12,13 +12,6 @@ from airflow.operators.python import PythonOperator, BranchPythonOperator
 from airflow.operators.empty import EmptyOperator
 from airflow.decorators import task
 
-"""
-1. SPY ETF 를 기준으로 하기 때문에 1993-01-01 을 시작날짜로 설정
-- S&P500 INDEX 를 기준으로 할 경우 1929년 부터 가능 - 그러나 그것은 다른 영역에서 처리 예정
-2. 2024-01-14 기준 : S&P500, Nasdaq100, DOW30, S&P400, S&P600, 그 외 기타 항목 수집 중
-3. 데이터 가져온 후 지정된 S3 bucket 에 들어감
-"""
-
 slack_alert = SlackAlert()
 stock_data_handler = StockDataHandler()
 stock_data_processor = StockDataProcessor()
@@ -27,6 +20,7 @@ stock_data_processor = StockDataProcessor()
 default_args = {
     'retries': 1,
     'retry_delay': timedelta(seconds=5),
+    'depends_on_past': True,
     'on_failure_callback': slack_alert.create_failure_alert,
     # 'on_success_callback': slack_alert.create_success_alert,
 }
@@ -34,32 +28,25 @@ default_args = {
 with DAG(
     dag_id="us_market_yf_daily_price",
     start_date=pendulum.datetime(2023, 12, 24, 19, tz="America/New_York"),
-    # schedule_interval='0 0 * * 2-6',  # 한국 시간 아침 9시
-    schedule_interval=None,  # trigger_dag_run
+    schedule_interval='0 21 * * 1-5 ',  # 한국 시간 아침 10시 or 11시 (dependency : summer time)
     default_args=default_args,
-    on_success_callback=slack_alert.create_success_alert,
-    catchup=False
+    catchup=False,
+    tags=['us_market', 'stock']
 ) as dag:
     @task(task_id="get_run_date_task")
     def get_run_date(**context):
-        data_interval_end = context["data_interval_end"]  # data_interval_end 는 no-dash 제공을 안 해줘서 별도 코드 필요
-        run_date = UtilityFunctions.get_est_date_from_utc_time(data_interval_end)
-        print(f"run_date : {run_date}, data_interval_end : {data_interval_end}")
+        run_date = context["data_interval_end"].in_timezone("America/New_York").format('YYYYMMDD')  # UTC -> EST
 
         return run_date
 
-    # TODO : Operator 부분을 ShortCircuitOperator 으로 변경 예정 - True/False 기준으로 변경
     def verify_market_open_status(**context):
         target_date = context['ti'].xcom_pull(task_ids="get_run_date_task")
-        print(f' target_date : {target_date}, type: {type(target_date)}')
         open_yn_result = USAMarketOpenStatus.get_us_market_open_status(target_date)
-        # open_yn_result = "Y"  # 테스트
 
-        if open_yn_result == "N":
-            return "market_closed_task"
-        else:
+        if open_yn_result == "Y":
             return "market_opened_task"
-
+        else:
+            return "market_closed_task"
 
     @task(task_id='run_sp500_task')
     def run_sp500_task(**context):
@@ -73,7 +60,6 @@ with DAG(
         )
 
         return sp500_stock_df
-
 
     @task(task_id='run_nasdaq100_task')
     def run_nasdaq100_task(**context):
@@ -162,8 +148,8 @@ with DAG(
     def upload_csv_to_s3_bucket(csv_dir_name):
         from airflow.models import Variable
         aws_json = Variable.get(key="aws", deserialize_json=True)
-        bucket_name = aws_json["aws_s3_bucket"]["yf_bucket"]
-        # bucket_name = aws_json["aws_s3_bucket"]["test_bucket"]  # test
+        # bucket_name = aws_json["aws_s3_bucket"]["yf_bucket"]
+        bucket_name = aws_json["aws_s3_bucket"]["test_bucket"]  # test
 
         data_directory_path = UtilityFunctions.make_data_directory_path(csv_dir_name)
         UtilityFunctions.upload_file_to_s3_bucket(data_directory_path, bucket_name)
@@ -191,13 +177,23 @@ with DAG(
     market_closed_task = EmptyOperator(task_id="market_closed_task")
     market_opened_task = EmptyOperator(task_id="market_opened_task")
 
+    alert_market_close_task = PythonOperator(
+        task_id="alert_market_closed_task",
+        python_callable=slack_alert.create_market_close_alert,
+        provide_context=True
+    )
+
     upload_csv_to_s3_bucket_task = PythonOperator(
         task_id="upload_csv_to_s3_bucket",
         python_callable=upload_csv_to_s3_bucket,
         op_args=['yf_total_price_aggregation']
     )
 
-    done_task = EmptyOperator(task_id="done_task", trigger_rule="none_failed")
+    done_task = EmptyOperator(
+        task_id="done_task",
+        trigger_rule="none_failed",
+        on_success_callback=[slack_alert.create_success_alert]
+    )
 
     get_run_date_task = get_run_date()
     run_sp500 = run_sp500_task()
@@ -207,7 +203,7 @@ with DAG(
     run_sp600 = run_sp600_task()
     run_various_stock = run_various_stock_task()
 
-    get_run_date_task >> verify_market_open_status_task >> market_closed_task >> done_task
+    get_run_date_task >> verify_market_open_status_task >> market_closed_task >> alert_market_close_task >> done_task
     verify_market_open_status_task >> market_opened_task
     market_opened_task >> [run_sp500, run_nasdaq100, run_dow30, run_sp400, run_sp600, run_various_stock] >> combine_stock_data_df_task
     combine_stock_data_df_task >> save_df_to_csv_task >> upload_csv_to_s3_bucket_task

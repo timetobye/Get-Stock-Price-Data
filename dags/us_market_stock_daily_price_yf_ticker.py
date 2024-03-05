@@ -25,6 +25,7 @@ stock_ticker_data_processor = StockTickerBaseDataProcessor()
 default_args = {
     'retries': 1,
     'retry_delay': timedelta(seconds=30),
+    'depends_on_past': True,
     'on_failure_callback': slack_alert.create_failure_alert,
     # 'on_success_callback': slack_alert.create_success_alert,
 }
@@ -32,21 +33,19 @@ default_args = {
 with DAG(
     dag_id="us_market_yf_ticker_daily_price",
     start_date=pendulum.datetime(2023, 12, 24, 19, tz="America/New_York"),
-    # schedule_interval='30 0 * * 2-6',  # 한국 시간 아침 9시
-    schedule_interval=None,  # trigger_dag_run
+    schedule_interval='20 21 * * 1-5',  # 한국 시간 아침 10시 or 11시 (dependency : summer time)
+    # schedule_interval=None,  # trigger_dag_run
     default_args=default_args,
-    on_success_callback=slack_alert.create_success_alert,
-    catchup=False
+    # on_success_callback=slack_alert.create_success_alert,
+    catchup=False,
+    tags=['us_market', 'stock']
 ) as dag:
     @task(task_id="get_run_date_task")
     def get_run_date(**context):
-        # 로그 확인 목적으로 남김
-        data_interval_end = context["data_interval_end"]  # data_interval_end 는 no-dash 제공을 안 해줘서 별도 코드 필요
-        run_date = UtilityFunctions.get_est_date_from_utc_time(data_interval_end)
+        run_date = context["data_interval_end"].in_timezone("America/New_York").format('YYYYMMDD')
 
         return run_date
 
-    # TODO : Operator 부분을 ShortCircuitOperator 으로 변경 예정 - True/False 기준으로 변경
     def verify_market_open_status(**context):
         target_date = context['ti'].xcom_pull(task_ids="get_run_date_task")
         print(f' target_date : {target_date}, type: {type(target_date)}')
@@ -132,13 +131,23 @@ with DAG(
     market_closed_task = EmptyOperator(task_id="market_closed_task")
     market_opened_task = EmptyOperator(task_id="market_opened_task")
 
+    alert_market_close_task = PythonOperator(
+        task_id="alert_market_closed_task",
+        python_callable=slack_alert.create_market_close_alert,
+        provide_context=True
+    )
+
     upload_csv_to_s3_bucket_task = PythonOperator(
         task_id="upload_csv_to_s3_bucket",
         python_callable=upload_csv_to_s3_bucket,
         op_args=['yf_individual_stock_prices']
     )
 
-    done_task = EmptyOperator(task_id="done_task", trigger_rule="none_failed")
+    done_task = EmptyOperator(
+        task_id="done_task",
+        trigger_rule="none_failed",
+        on_success_callback=[slack_alert.create_success_alert]
+    )
 
     get_run_date_task = get_run_date()
     run_sp500 = run_sp500_task()
@@ -148,7 +157,7 @@ with DAG(
     run_sp600 = run_sp600_task()
     run_various_stock = run_various_stock_task()
 
-    get_run_date_task >> verify_market_open_status_task >> market_closed_task >> done_task
+    get_run_date_task >> verify_market_open_status_task >> market_closed_task >> alert_market_close_task >> done_task
     verify_market_open_status_task >> market_opened_task
     market_opened_task >> [run_sp500, run_nasdaq100, run_dow30, run_sp400, run_sp600, run_various_stock] >> upload_csv_to_s3_bucket_task
     upload_csv_to_s3_bucket_task >> done_task
