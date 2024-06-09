@@ -2,14 +2,13 @@ import pandas as pd
 import time
 import yfinance as yf
 
-"""
-Index에 속한 ticker 정보를 가져옵니다.
-그리고 추가로 가져올 항목에 대한 목록을 정리 합니다.
-최종적으로 index 정보와 ticker 목록을 반환 합니다.
-"""
-
 
 class StockDataHandler:
+    """
+    Index에 속한 ticker 정보를 가져옵니다.
+    그리고 추가로 가져올 항목에 대한 목록을 정리 합니다.
+    최종적으로 index 정보와 ticker 목록을 반환 합니다.
+    """
     def __init__(self):
         # TODO : Link 는 Airflow Variables 에 넣을지 확인 중. 오히려 코드 중복과 양이 늘어날 것 같음
         self.index_data_wiki_link_dict = {
@@ -39,7 +38,8 @@ class StockDataHandler:
         return df
 
     def get_sp500_data(self):
-        sp500_df = pd.read_html((self.index_data_wiki_link_dict.get('S&P500', None)), header=0)[0]
+        sp_500_wiki = self.index_data_wiki_link_dict.get('S&P500', None)
+        sp500_df = pd.read_html(sp_500_wiki, header=0)[0]
 
         sp500_column_selection = ['Symbol', 'Security', 'GICS Sector', 'GICS Sub-Industry']
         sp500_df = sp500_df[sp500_column_selection]
@@ -52,7 +52,8 @@ class StockDataHandler:
         return sp500_df
 
     def get_nasdaq100_data(self):
-        nasdaq100_df = pd.read_html((self.index_data_wiki_link_dict.get('NASDAQ100', None)), header=0)[4]
+        nasdaq100_wiki = self.index_data_wiki_link_dict.get('NASDAQ100', None)
+        nasdaq100_df = pd.read_html(nasdaq100_wiki, header=0)[4]
 
         nasdaq100_column_selection = ['Ticker', 'Company', 'GICS Sector', 'GICS Sub-Industry']
         nasdaq100_df = nasdaq100_df[nasdaq100_column_selection]
@@ -65,7 +66,8 @@ class StockDataHandler:
         return nasdaq_100_df
 
     def get_dow30_data(self):
-        dow30_df = pd.read_html((self.index_data_wiki_link_dict.get('DOW30', None)), header=0)[1]
+        dow30_wiki = self.index_data_wiki_link_dict.get('DOW30', None)
+        dow30_df = pd.read_html(dow30_wiki, header=0)[1]
 
         dow30_column_selection = ['Symbol', 'Company']
         dow30_df = dow30_df[dow30_column_selection]
@@ -77,7 +79,8 @@ class StockDataHandler:
         return dow30_df
 
     def get_sp400_data(self):
-        sp400_df = pd.read_html((self.index_data_wiki_link_dict.get('S&P400', None)), header=0)[0]
+        sp400_wiki = self.index_data_wiki_link_dict.get('S&P400', None)
+        sp400_df = pd.read_html(sp400_wiki, header=0)[0]
 
         sp400_column_selection = ['Symbol', 'Security', 'GICS Sector', 'GICS Sub-Industry']
         sp400_df = sp400_df[sp400_column_selection]
@@ -90,7 +93,8 @@ class StockDataHandler:
         return sp400_df
 
     def get_sp600_data(self):
-        sp600_df = pd.read_html((self.index_data_wiki_link_dict.get('S&P600', None)), header=0)[0]
+        sp600_wiki = self.index_data_wiki_link_dict.get('S&P600', None)
+        sp600_df = pd.read_html(sp600_wiki, header=0)[0]
 
         sp600_column_selection = ['Symbol', 'Company', 'GICS Sector', 'GICS Sub-Industry']
         sp600_df = sp600_df[sp600_column_selection]
@@ -99,7 +103,6 @@ class StockDataHandler:
 
         return sp600_df
 
-    # TODO : 메소드 명 적절하게 다시 변경할 것
     def get_various_stock_data(self):
         from airflow.models import Variable
         variety_ticker_list = Variable.get(key="additional_ticker", deserialize_json=True)
@@ -108,7 +111,6 @@ class StockDataHandler:
 
         return various_stock_df
 
-    # TODO: 이부분 수정 해야함 - 계속 수정 필요
     def combine_and_process_stock_data(self, dfs):
         """
         :param dfs: [sp500_df, nasdaq100_df, dow30_df, sp400_df, sp600_df, var_df]  # 20240106 기준
@@ -119,46 +121,53 @@ class StockDataHandler:
         # keep='first': 중복된 값 중 첫 번째로 나오는 레코드를 유지하고 나머지 중복 레코드는 제거
         concat_df.drop_duplicates(subset=['ticker'], keep='first', inplace=True)
 
+        index_dfs = {
+            's&p500': dfs[0],
+            'nasdaq100': dfs[1],
+            'dow30': dfs[2]
+        }
+
         # 각 지수에 속한 종목을 1(True) 또는 0(False) 으로 표시하는 열 추가 - 대형주만 처리함
-        sp500_df, nasdaq100_df, dow30_df = dfs[0], dfs[1], dfs[2]
-        concat_df['s&p500'] = concat_df['ticker'].isin(sp500_df['ticker']).astype(int)
-        concat_df['nasdaq100'] = concat_df['ticker'].isin(nasdaq100_df['ticker']).astype(int)
-        concat_df['dow30'] = concat_df['ticker'].isin(dow30_df['ticker']).astype(int)
+        for index_name, index_df in index_dfs.items():
+            concat_df[index_name] = concat_df['ticker'].isin(index_df['ticker']).astype(int)
 
         return concat_df
 
-    # TODO : 향후에 데이터를 더 모아야 하는 코드로 변경 해야 하므로, 아래부터 끝까지 해당하는 코드는 별도 분리 할 예정
-    def make_stock_info_df(self, stock_ticker_list):
+    def make_stock_info_df(self, stock_ticker_list, **kwargs):
+        mode = kwargs['dag_run'].conf.get('test_mode')
+        if mode:
+            stock_ticker_list = stock_ticker_list[0:10]
+
         stock_info_list = []
         for ticker in stock_ticker_list:
             result = self._get_stock_info(ticker)
             stock_info_list.append(result)
 
-        stock_info_df = pd.DataFrame.from_dict(stock_info_list)  # Pandas 에서 데이터프레임 만드는 방법
+        # Pandas 에서 데이터프레임 만드는 방법
+        stock_info_df = pd.DataFrame.from_dict(stock_info_list)
 
         return stock_info_df
 
     def _get_stock_info(self, ticker):
         try:
             stock_info = self._get_stock_info_data(ticker)
-
+            return stock_info
+        except:
+            stock_info = self._try_get_stock_info(ticker)
             return stock_info
 
-        # TODO : 에러 처리에 대해서는 추가적인 대응이 필요함. yfinance API 가 정상적으로 실행되지 않을 때가 종종 있음.
-        except:
-            n, max_rotate_value = 0, 5
-            while n < max_rotate_value:
-                try:
-                    stock_info = self._get_stock_info_data(ticker)
+    def _try_get_stock_info(self, ticker, max_retries=5, retry_interval=2.0):
+        n = 0
+        while n < max_retries:
+            try:
+                stock_info = self._get_stock_info_data(ticker)
+                return stock_info
+            except Exception as e:
+                print(f"Retry - ticker : {ticker}, e : {e}, n : {n}")
+                n += 1
+                time.sleep(retry_interval)
 
-                    return stock_info
-
-                except Exception as e:
-                    n += 1
-                    time.sleep(2.0)
-
-            print(f"Fail - ticker : {ticker}, error : {e}, n : {n}")
-            raise ValueError
+        raise ValueError(f"Failed to fetch stock info for ticker: {ticker}")
 
     def _get_stock_info_data(self, ticker):
         yf_ticker_obj = yf.Ticker(ticker)
