@@ -20,7 +20,7 @@ mkdir -p ./dags ./logs ./plugins ./config ./data
 echo -e "AIRFLOW_UID=$(id -u)" > .env
 ```
 상세 내용
-- data 디렉터리 하위에는 각 dag 별로 처리 할 때 생성하는 파일을 잠시 보관하기 위한 디렉터리가 있습니다.
+- data 디렉터리 하위에는 각 dag 별로 처리 할 때 생성하는 파일을 잠시 보관하기 위한 디렉터리가 있습니다. -> 제거 예정
 - 각종 변수는 Airflow Variable 을 이용하고 관리 하므로 조회하는 리포에는 존재하지 않습니다.
 - S3에 데이터를 저장하고 Athena + Glue 를 이용하여 데이터를 관리 및 조회 합니다.
 - BI 는 metabase 와 Grafana 를 사용
@@ -40,8 +40,6 @@ PYTHONPATH=${WORKSPACE_FOLDER}/plugins
 - us_market_stock_daily_price_yf.py : 일별로 데이터를 가져와 저장합니다. 1993-01-01을 기준(SPY 상장 시즌)으로 합니다.
 - us_market_stock_daily_price_yf_ticker.py : 티커 기준으로 데이터를 가져와서 저장 합니다. 각 종목 별로 가져올 수 있는 최대 기간 데이터를 가져옵니다.
 - us_market_stock_mdd.py : 각 종목별로 MDD 를 구합니다. [pyfolio](https://github.com/stefan-jansen/pyfolio-reloaded) 를 이용합니다.
-- backfill 용 코드는 수정 중 입니다. airflow backfill 기능을 이용할 수도 있지만, 주식 데이터의 기간이 긴 경우에는(예를 들면 30년) 빠르게 코드로 처리하는 것이 낫습니다.
-
 
 ## 4. TODO
 기본 목록
@@ -56,17 +54,18 @@ PYTHONPATH=${WORKSPACE_FOLDER}/plugins
 - [x] us market 종목 중 지수 내 속하지 않은 항목, ETF 에 대해 파일로 관리 - 일부 작업 중
 - [x] 각 종목별 배당 내역 : Annual Total Return  
 - [x] Quant : 상대강도지수 구현
-- [ ] Airflow 코드 리뷰 및 구조 변경 - 진행 중
-- [ ] Athena 쿼리 수정
-- [ ] Airflow 코드 일관성 유지
+- [x] Airflow 코드 리뷰 및 구조 변경
+- [x] Athena 쿼리 수정
+- [ ] Airflow 코드 일관성 유지 - 진행 중
+- [ ] API 조회 후 파일 처리 방법 수정
 
 추가 목록
 - [ ] Edgar API : https://www.sec.gov/edgar/sec-api-documentation
-- [ ] 10-K, 10-Q, IR report, earning call with Gen AI
+- [ ] 10-K, 10-Q, IR report, earning call with Gen AI - 학습 중
 
 BI
 - [x] Metabase BI 작업
-- [ ] Grafana BI 작업
+- [ ] Grafana BI 작업 - 진행 중
 
 Dev
 - [ ] AWS Cloud
