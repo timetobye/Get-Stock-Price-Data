@@ -1,13 +1,13 @@
+import io
+import os
+from datetime import datetime
+
+import awswrangler as wr
 import empyrical as ep
 import numpy as np
-import os
 import pandas as pd
 import yfinance as yf
-import io
-import boto3
-
-from datetime import datetime
-from utils.utility_functions import UtilityFunctions
+from airflow.models import Variable
 
 """
 1. 각 Ticker 별 상장 시작 -> 현재까지 데이터를 수집
@@ -16,65 +16,37 @@ from utils.utility_functions import UtilityFunctions
 """
 
 
-# TODO : 여기도 티커별로 만드는 것 이용해서 처리하면 될 것 같다.
-def upload_stock_mdd_to_s3(stock_ticker_list, **kwargs):
-    mode = kwargs['dag_run'].conf.get('test_mode')
-    if mode:
-        stock_ticker_list = stock_ticker_list[0:10]
-
-    stock_ticker_list = stock_ticker_list[0:3]
-    for idx, ticker in enumerate(stock_ticker_list):
-        stock_close_series_data = get_stock_close_series_data(ticker)
-        maximum_drawdown_df = make_maximum_drawdown_df(stock_close_series_data)
-        upload_dataframe_to_s3(maximum_drawdown_df, ticker, test_mode=mode)
-
-
-def upload_dataframe_to_s3(df, ticker, test_mode=False):
-    csv_buffer = io.StringIO()
-    df.to_csv(csv_buffer, index=False)
-
-    from airflow.models import Variable
-    aws_json = Variable.get(key="aws", deserialize_json=True)
-    aws_access_key_id = aws_json["key"]["aws_access_key"]
-    aws_secret_access_key = aws_json["key"]["aws_secret_access_key"]
-
-    if test_mode:
-        bucket_name = aws_json["aws_s3_bucket"]["test_bucket"]
-    else:
-        bucket_name = aws_json["aws_s3_bucket"]["mdd_bucket"]
-
-    file_name = f"{ticker}/{ticker}_mdd.csv"
-
-    s3_client = boto3.client(
-        's3',
-        aws_access_key_id=aws_access_key_id,
-        aws_secret_access_key=aws_secret_access_key
+def get_stock_close_series_data(idx, **kwargs):
+    ti = kwargs["ti"]
+    ticker_list = ti.xcom_pull(
+        task_ids="get_ticker_list_from_aws_task", key="ticker_list"
     )
-    s3_client.put_object(Bucket=bucket_name, Key=file_name, Body=csv_buffer.getvalue())
 
+    batch_size = 50
+    start_idx = idx * batch_size
+    end_idx = start_idx + batch_size
+    batch_tickers = ticker_list[start_idx:end_idx]
+    upper_tickers = [ticker.upper() for ticker in batch_tickers]
 
+    yf_ticker_mdd_dfs = []
+    for index, ticker in enumerate(upper_tickers):
+        yf_ticker = yf.Ticker(ticker)
+        yf_ticker_max_history = yf_ticker.history(period="max", auto_adjust=False)
+        result_close_series_data = yf_ticker_max_history["Close"].pct_change()
+        mdd_period_df = make_maximum_drawdown_df(result_close_series_data)
+        mdd_period_df["ticker"] = ticker
+        yf_ticker_mdd_dfs.append(mdd_period_df)
 
-def get_stock_close_series_data(ticker):
-    yf_ticker = yf.Ticker(ticker)
-    yf_ticker_max_history = yf_ticker.history(period='max', auto_adjust=False)
-    result_close_series_data = yf_ticker_max_history['Close'].pct_change()
-
-    return result_close_series_data
+    yf_ticker_mdd_df = pd.concat(yf_ticker_mdd_dfs, ignore_index=True)
+    ti.xcom_push(
+        key=f"batch_{idx}", value=yf_ticker_mdd_df.to_json()
+    )  # JSON 형태로 저장
 
 
 def make_maximum_drawdown_df(data, top=300):
     mdd_period_df = show_worst_drawdown_periods(data, top=top)
 
     return mdd_period_df
-
-
-def make_stock_directory(ticker):
-    dir_name = "yf_individual_stock_mdd"
-    base_directory = UtilityFunctions.make_data_directory_path(dir_name)
-    stock_directory_path = f"{base_directory}{os.sep}{ticker}"
-    os.makedirs(stock_directory_path, exist_ok=True)
-
-    return stock_directory_path
 
 
 def get_max_drawdown_underwater(underwater):
@@ -134,19 +106,13 @@ def get_top_drawdowns(returns, top=10):
         peak, valley, recovery = get_max_drawdown_underwater(underwater)
         # Slice out draw-down period
         if not pd.isnull(recovery):
-            underwater.drop(
-                underwater[peak:recovery].index[1:-1], inplace=True
-            )
+            underwater.drop(underwater[peak:recovery].index[1:-1], inplace=True)
         else:
             # drawdown has not ended yet
             underwater = underwater.loc[:peak]
 
         drawdowns.append((peak, valley, recovery))
-        if (
-                (len(returns) == 0)
-                or (len(underwater) == 0)
-                or (np.min(underwater) == 0)
-        ):
+        if (len(returns) == 0) or (len(underwater) == 0) or (np.min(underwater) == 0):
             break
 
     return drawdowns
@@ -193,17 +159,17 @@ def gen_drawdown_table(returns, top=10):
         if isinstance(recovery, float):
             df_drawdowns.loc[i, "Recovery date"] = recovery
         else:
-            df_drawdowns.loc[
-                i, "Recovery date"
-            ] = recovery.to_pydatetime().strftime("%Y-%m-%d")
+            df_drawdowns.loc[i, "Recovery date"] = recovery.to_pydatetime().strftime(
+                "%Y-%m-%d"
+            )
         # df_drawdowns.loc[i, "Net drawdown in %"] = ((df_cum.loc[peak] - df_cum.loc[valley]) / df_cum.loc[peak])
-        df_drawdowns.loc[i, "Net drawdown in %"] = ((df_cum.loc[peak] - df_cum.loc[valley]) / df_cum.loc[peak]) * 100
+        df_drawdowns.loc[i, "Net drawdown in %"] = (
+            (df_cum.loc[peak] - df_cum.loc[valley]) / df_cum.loc[peak]
+        ) * 100
 
     df_drawdowns["Peak date"] = pd.to_datetime(df_drawdowns["Peak date"])
     df_drawdowns["Valley date"] = pd.to_datetime(df_drawdowns["Valley date"])
-    df_drawdowns["Recovery date"] = pd.to_datetime(
-        df_drawdowns["Recovery date"]
-    )
+    df_drawdowns["Recovery date"] = pd.to_datetime(df_drawdowns["Recovery date"])
 
     return df_drawdowns
 
@@ -224,16 +190,16 @@ def show_worst_drawdown_periods(returns, top=5):
 
     drawdown_df = gen_drawdown_table(returns, top=top)
     drawdown_df.sort_values("Net drawdown in %", ascending=False, inplace=True)
-    drawdown_df.dropna(subset=['Net drawdown in %'], inplace=True)
+    drawdown_df.dropna(subset=["Net drawdown in %"], inplace=True)
     drawdown_df.reset_index(inplace=True)
 
     converted_column_list = {
-        'index': 'worst_drawdown_periods',
-        'Net drawdown in %': 'net_drawdown',
-        'Peak date': 'peak_date',
-        'Valley date': 'valley_date',
-        'Recovery date': 'recovery_date',
-        'Duration': 'duration'
+        "index": "worst_drawdown_periods",
+        "Net drawdown in %": "net_drawdown",
+        "Peak date": "peak_date",
+        "Valley date": "valley_date",
+        "Recovery date": "recovery_date",
+        "Duration": "duration",
     }
     drawdown_df.rename(columns=converted_column_list, inplace=True)
 

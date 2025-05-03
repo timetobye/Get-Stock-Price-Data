@@ -1,0 +1,2 @@
+select ticker
+from us_ticker_list
